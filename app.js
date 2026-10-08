@@ -8,7 +8,7 @@ const on=(el,event,fn,opts)=>{if(el)el.addEventListener(event,fn,opts)};
 let units="mph";
 let motionToken=0;
 const settings={throttleStep:10,gotoRadius:500,reverseSeconds:5,steerStep:10,signalLossSeconds:5,motorHomeOffset:0,theme:"dark"};
-try{Object.assign(settings,JSON.parse(localStorage.getItem("trollSettings")||"{}"))}catch(_){}
+try{Object.assign(settings,JSON.parse(localStorage.getItem("trollSettings")||"{}"))}catch(_){} const allowedThemes=["dark","classic","gunmetal","deepsea","nightvision","highvis"];if(!allowedThemes.includes(settings.theme))settings.theme="dark";
 function saveSettings(){try{localStorage.setItem("trollSettings",JSON.stringify(settings))}catch(_){}}
 
 const state={
@@ -33,7 +33,7 @@ if(helm&&thrust){
   for(let n=0;n<40;n++){
     const d=document.createElement("i");
     d.className="thrustDot "+(n<20?"green":n<30?"yellow":"red");
-    const radius=(helm.clientWidth/2)-20;
+    const radius=Math.max(20,(thrust.clientWidth/2)-4);
     d.style.transform="rotate("+(n*9)+"deg) translateY(-"+radius+"px)";
     thrust.appendChild(d);
   }
@@ -413,7 +413,7 @@ function syncSettingsUI(){
   safeText("homeOffsetStatus","Home offset: "+Math.round(settings.motorHomeOffset||0)+"°");
 }
 qa(".theme").forEach(b=>on(b,"click",()=>{
-  settings.theme=b.dataset.theme||"dark";saveSettings();syncSettingsUI();
+  settings.theme=allowedThemes.includes(b.dataset.theme)?b.dataset.theme:"dark";saveSettings();syncSettingsUI();
 }));
 qa(".unit").forEach(b=>on(b,"click",()=>{
   settings.units=b.dataset.unit==="knots"?"knots":"mph";saveSettings();syncSettingsUI();render();
