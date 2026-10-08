@@ -200,3 +200,8 @@ body[data-theme="highvis"] .ampDraw b{color:#63e28f}
 
 /* v0.17.4 throttle position */
 .speed{transform:translateX(8px)!important}
+
+/* v0.17.5 full-helm steering + sizing */
+.helm{width:min(62.93vw,257px)!important;transform:translateX(-3px)!important;touch-action:none}
+.steerKnob{width:28px!important;height:28px!important}
+@media(max-width:380px){.helm{width:220px!important}}
