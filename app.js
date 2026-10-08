@@ -14,12 +14,17 @@ let zigBaseHeading=0;
 let spotTimer=null;
 let spotDx=0;
 let spotDy=0;
-const settings={throttleStep:10,gotoRadius:500,reverseSeconds:5,steerStep:10,signalLossSeconds:5,autoSteerSeconds:5,motorHomeOffset:0,theme:"dark"};
+let spotCorrecting=false;
+let steeringFaultSince=0;
+let resumeTimer=null;
+let resumeSeconds=0;
+let resumeState=null;
+const settings={throttleStep:10,gotoRadius:500,gotoMaxThrottle:60,gotoSlowdownDistance:25,reverseSeconds:5,steerStep:10,steeringFaultTolerance:15,signalLossSeconds:5,autoSteerSeconds:5,motorHomeOffset:0,theme:"dark"};
 try{Object.assign(settings,JSON.parse(localStorage.getItem("trollSettings")||"{}"))}catch(_){} const allowedThemes=["dark","classic","gunmetal","deepsea","nightvision","highvis"];if(!allowedThemes.includes(settings.theme))settings.theme="dark";
 function saveSettings(){try{localStorage.setItem("trollSettings",JSON.stringify(settings))}catch(_){}}
 
 const state={
-  speed:0, dir:0, currentHeading:287, desiredHeading:287, steer:0,
+  speed:0, dir:0, currentHeading:287, desiredHeading:287, steer:0, actualSteer:0, steeringFault:false,
   anchor:false, hold:false, cruise:false, zigTroll:false, spotAccuracy:"medium", transition:false, transitionTarget:0, signalLost:false
 };
 
@@ -86,6 +91,56 @@ function positionOnSteerRing(el,angle,radius,rotate){
   el.style.transformOrigin="50% 50%";
 }
 
+
+function steeringErrorDegrees(){
+  return Math.abs(normalize180(state.steer-state.actualSteer));
+}
+function clearResume(){
+  if(resumeTimer){clearInterval(resumeTimer);resumeTimer=null}
+  resumeSeconds=0;resumeState=null;
+  const b=by("resumeAuto");if(b)b.classList.add("hidden");
+}
+function updateResumeButton(){
+  const b=by("resumeAuto");if(!b)return;
+  if(!resumeState||resumeSeconds<=0){b.classList.add("hidden");return}
+  const label=resumeState.kind==="goto"?"GO TO":"SCOUT TROLL";
+  b.textContent="↻ RESUME "+label+" ("+resumeSeconds+"s)";
+  b.classList.remove("hidden");
+}
+function armResume(snapshot){
+  clearResume();
+  resumeState=snapshot;
+  resumeSeconds=30;
+  updateResumeButton();
+  resumeTimer=setInterval(()=>{
+    resumeSeconds--;
+    if(resumeSeconds<=0){clearResume();return}
+    updateResumeButton();
+  },1000);
+}
+function triggerSteeringFault(){
+  if(state.steeringFault)return;
+  state.steeringFault=true;
+  clearNavTimer();
+  if(zigTimer){clearInterval(zigTimer);zigTimer=null}
+  if(spotTimer){clearInterval(spotTimer);spotTimer=null}
+  state.zigTroll=false;state.anchor=false;state.hold=false;state.cruise=false;
+  state.speed=0;state.dir=0;
+  navigating=false;
+  activeWaypointName="";
+  render();
+}
+setInterval(()=>{
+  // Simulator motor-angle feedback follows the command. Real hardware will replace state.actualSteer.
+  const diff=normalize180(state.steer-state.actualSteer);
+  const step=Math.sign(diff)*Math.min(Math.abs(diff),30);
+  state.actualSteer=normalize180(state.actualSteer+step);
+  const err=steeringErrorDegrees();
+  if(err>settings.steeringFaultTolerance){
+    if(!steeringFaultSince)steeringFaultSince=Date.now();
+    if(Date.now()-steeringFaultSince>=2000)triggerSteeringFault();
+  }else steeringFaultSince=0;
+},100);
 function render(){
   safeText("speedVal",Math.round(state.speed)+"%");
   const speedInput=by("speed"); if(speedInput)speedInput.value=state.speed;
@@ -105,7 +160,7 @@ function render(){
   safeClass("cruise","on",state.cruise);
   safeClass("zig","on",state.zigTroll);
 
-  const gear=state.signalLost?"NO SIGNAL MANUAL ONLY":state.zigTroll?"SCOUT TROLL AUTOPILOT":state.transition?(state.transitionTarget>0?"SHIFTING TO FORWARD…":"SHIFTING TO REVERSE…"):state.dir>0?"FORWARD":state.dir<0?"REVERSE":"NEUTRAL";
+  const gear=state.steeringFault?"STEERING POSITION FAULT":state.signalLost?"NO SIGNAL MANUAL ONLY":state.zigTroll?"SCOUT TROLL AUTOPILOT":state.transition?(state.transitionTarget>0?"SHIFTING TO FORWARD…":"SHIFTING TO REVERSE…"):state.dir>0?"FORWARD":state.dir<0?"REVERSE":"NEUTRAL";
   const dir=by("direction");
   if(dir){
     dir.className="direction";
@@ -130,11 +185,11 @@ function render(){
 
   const connection=by("connectionStatus");
   if(connection){
-    connection.textContent=state.signalLost?"NO SIGNAL":"SIMULATOR CONNECTED";
+    connection.textContent=state.steeringFault?"STEERING FAULT":state.signalLost?"NO SIGNAL":"SIMULATOR CONNECTED";
     connection.classList.toggle("noSignalStatus",state.signalLost);
   }
 
-  const steeringLocked=navigating||state.zigTroll||state.anchor||state.signalLost;
+  const steeringLocked=navigating||state.zigTroll||state.anchor||state.signalLost||state.steeringFault;
   const leftBtn=by("left"),rightBtn=by("right");
   if(leftBtn)leftBtn.disabled=steeringLocked;
   if(rightBtn)rightBtn.disabled=steeringLocked;
@@ -142,10 +197,10 @@ function render(){
 
   ["forward","reverse","speed","cruise","anchor","hold","zig"].forEach(id=>{
     const el=by(id); if(!el)return;
-    const waypointLocked=navigating&&(id==="anchor"||id==="hold"||id==="zig");
+    const waypointLocked=navigating&&(id==="forward"||id==="reverse"||id==="speed"||id==="cruise"||id==="anchor"||id==="hold"||id==="zig");
     const zigLocked=state.zigTroll&&(id==="forward"||id==="reverse"||id==="cruise"||id==="anchor"||id==="hold");
     const spotLocked=state.anchor&&(id==="forward"||id==="reverse"||id==="speed"||id==="cruise"||id==="hold"||id==="zig");
-    const locked=state.signalLost||waypointLocked||zigLocked||spotLocked;
+    const locked=state.signalLost||state.steeringFault||waypointLocked||zigLocked||spotLocked;
     el.disabled=locked;
     el.classList.toggle("motorLocked",locked);
   });
@@ -316,7 +371,10 @@ function applyZigLeg(){
   const targetSteer=normalize180(targetBearing-state.currentHeading);
   smoothAutoSteer(targetSteer,settings.autoSteerSeconds);
 }
-function cancelZigTroll(){
+function cancelZigTroll(allowResume=false){
+  if(allowResume&&state.zigTroll){
+    armResume({kind:"scout",baseHeading:zigBaseHeading,leg:zigLeg,feet:zigFeet,speed:state.speed});
+  }
   autoSteerToken++;
   if(zigTimer){clearInterval(zigTimer);zigTimer=null}
   if(!state.zigTroll)return;
@@ -328,7 +386,8 @@ function cancelZigTroll(){
   render();
 }
 function startZigTroll(){
-  if(state.signalLost||state.zigTroll)return;
+  if(state.signalLost||state.steeringFault||state.zigTroll)return;
+  clearResume();
   if(navigating)cancelAutopilot();
   if(spotTimer){clearInterval(spotTimer);spotTimer=null}
   state.anchor=false;
@@ -368,28 +427,54 @@ function updateSpotDisplay(){
   dot.style.left=x+"px";
   dot.style.top=y+"px";
   safeText("spotDistance",Math.hypot(spotDx,spotDy).toFixed(1)+" ft");
+  safeText("spotThrust",Math.round(state.anchor?state.speed:0)+"%");
+  const a=by("spotAction");
+  if(a){
+    const d=Math.hypot(spotDx,spotDy);
+    const limit=state.spotAccuracy==="high"?3:state.spotAccuracy==="medium"?6:10;
+    const label=d>limit?"RECOVERING":spotCorrecting?"CORRECTING":"HOLDING";
+    a.textContent=label;
+    a.className=label.toLowerCase();
+  }
 }
 function startSpotSimulation(){
   if(spotTimer)clearInterval(spotTimer);
-  spotDx=1.2;spotDy=-.8;
+  spotDx=1.2;spotDy=-.8;spotCorrecting=false;
   updateSpotDisplay();
   spotTimer=setInterval(()=>{
-    if(!state.anchor||state.signalLost)return;
+    if(!state.anchor||state.signalLost||state.steeringFault)return;
     const limit=state.spotAccuracy==="high"?3:state.spotAccuracy==="medium"?6:10;
+    const maxPower=state.spotAccuracy==="high"?80:state.spotAccuracy==="medium"?55:35;
     const d=Math.hypot(spotDx,spotDy);
-    const correction=d>0?Math.min(.7,d*.22):0;
-    spotDx+=(Math.random()-.5)*1.4-(spotDx/(d||1))*correction;
-    spotDy+=(Math.random()-.5)*1.4-(spotDy/(d||1))*correction;
-    const nd=Math.hypot(spotDx,spotDy);
-    if(nd>limit*.92){
-      const f=(limit*.86)/nd;
-      spotDx*=f;spotDy*=f;
+    if(!spotCorrecting&&d>limit)spotCorrecting=true;
+    if(spotCorrecting&&d<limit*.65)spotCorrecting=false;
+
+    // Simulated wind/current drift.
+    spotDx+=(Math.random()-.5)*1.25;
+    spotDy+=(Math.random()-.5)*1.25;
+
+    if(spotCorrecting){
+      const error=Math.max(0,d-limit*.55);
+      const ratio=Math.max(.15,Math.min(1,error/(limit*.9)));
+      state.speed=Math.round(10+(maxPower-10)*ratio);
+      state.dir=1;
+      const correction=(state.speed/maxPower)*1.15;
+      spotDx-=(spotDx/(d||1))*correction;
+      spotDy-=(spotDy/(d||1))*correction;
+    }else{
+      state.speed=0;state.dir=0;
     }
+
+    // Keep simulator dot on the display without faking the selected hold radius.
+    const nd=Math.hypot(spotDx,spotDy);
+    if(nd>12){const f=12/nd;spotDx*=f;spotDy*=f}
     updateSpotDisplay();
+    render();
   },700);
 }
 function startSpotLock(){
-  if(state.signalLost||navigating||state.zigTroll)return;
+  if(state.signalLost||state.steeringFault||navigating||state.zigTroll)return;
+  clearResume();
   motionToken++;
   autoSteerToken++;
   state.anchor=true;
@@ -414,7 +499,23 @@ on(by("cruise"),"click",()=>{if(state.signalLost||state.zigTroll)return;state.cr
 qa(".accuracyBtns button").forEach(b=>on(b,"click",()=>{state.spotAccuracy=b.dataset.accuracy||"medium";render();}));
 on(by("exitSpotLock"),"click",stopSpotLock);
 on(by("zig"),"click",()=>state.zigTroll?cancelZigTroll():startZigTroll());
-on(by("stop"),"click",()=>{clearNavTimer();if(spotTimer){clearInterval(spotTimer);spotTimer=null}autoSteerToken++;if(state.zigTroll)cancelZigTroll();motionToken++;if(zigTimer){clearInterval(zigTimer);zigTimer=null} state.zigTroll=false;zigFeet=0;zigLeg="diag"; if(spotTimer){clearInterval(spotTimer);spotTimer=null} state.speed=0;state.dir=0;state.anchor=false;state.hold=false;state.cruise=false;state.transition=false;state.transitionTarget=0;if(navigating){navigating=false;activeWaypointName="";const route=by("routeSvg");if(route)route.classList.remove("on");const go=by("goTo");if(go){go.textContent="GO TO";go.classList.remove("navigating")}}render()});
+on(by("stop"),"click",()=>{
+  if(navigating)armResume({kind:"goto",waypoint:activeWaypointName,remaining:navRemaining});
+  else if(state.zigTroll)armResume({kind:"scout",baseHeading:zigBaseHeading,leg:zigLeg,feet:zigFeet,speed:state.speed});
+  clearNavTimer();
+  if(spotTimer){clearInterval(spotTimer);spotTimer=null}
+  autoSteerToken++;motionToken++;
+  if(zigTimer){clearInterval(zigTimer);zigTimer=null}
+  state.zigTroll=false;zigFeet=0;zigLeg="diag";
+  state.speed=0;state.dir=0;state.anchor=false;state.hold=false;state.cruise=false;
+  state.transition=false;state.transitionTarget=0;
+  if(navigating){
+    navigating=false;activeWaypointName="";
+    const route=by("routeSvg");if(route)route.classList.remove("on");
+    const go=by("goTo");if(go){go.textContent="GO TO";go.classList.remove("navigating")}
+  }
+  render();
+});
 
 const wpData={
   "Rock Pile":{coords:"30.12345, -83.45678",distance:286,bearing:"042°"},
@@ -454,7 +555,10 @@ function completeGoTo(){
   startSpotSimulation();
   render();
 }
-function cancelAutopilot(){
+function cancelAutopilot(allowResume=false){
+  if(allowResume&&navigating){
+    armResume({kind:"goto",waypoint:activeWaypointName,remaining:navRemaining});
+  }
   autoSteerToken++;
   clearNavTimer();
   navApproachSpeed=null;
@@ -468,8 +572,9 @@ function cancelAutopilot(){
   render();
 }
 
-function engageAutopilot(){
-  if(state.signalLost||!selectedWaypointEl)return;
+function engageAutopilot(remainingOverride=null){
+  if(state.signalLost||state.steeringFault||!selectedWaypointEl)return;
+  if(remainingOverride===null)clearResume();
   if(state.zigTroll)cancelZigTroll();
   const name=selectedWaypointEl.dataset.wp;
   const w=wpData[name];
@@ -484,21 +589,23 @@ function engageAutopilot(){
     smoothAutoSteer(normalize180(targetBearing-state.currentHeading),settings.autoSteerSeconds);
   }
   const go=by("goTo"); if(go){go.textContent="NAVIGATING…";go.classList.add("navigating")}
-  navRemaining=w.distance;
+  navRemaining=remainingOverride===null?w.distance:Math.max(3,Number(remainingOverride)||w.distance);
   navApproachSpeed=null;
   state.dir=1;
-  if(state.speed<30)state.speed=50;
+  state.speed=settings.gotoMaxThrottle;
   safeText("goNote","Navigating to waypoint • arrival will engage Spot Lock");
   clearNavTimer();
   navTimer=setInterval(()=>{
     if(!navigating||state.signalLost){clearNavTimer();return}
 
-    // Inside 25 ft, progressively reduce thrust as we approach the waypoint.
-    // Capture the speed at entry so the ramp is smooth and predictable.
-    if(navRemaining<=25){
-      if(navApproachSpeed===null)navApproachSpeed=Math.max(10,state.speed);
-      const progress=Math.max(0,Math.min(1,(navRemaining-3)/22));
-      state.speed=Math.max(8,navApproachSpeed*progress);
+    // Smoothly ramp from Go-To max throttle down to low thrust near arrival.
+    const slow=settings.gotoSlowdownDistance;
+    if(navRemaining<=slow){
+      const span=Math.max(1,slow-3);
+      const progress=Math.max(0,Math.min(1,(navRemaining-3)/span));
+      state.speed=Math.max(8,8+(settings.gotoMaxThrottle-8)*progress);
+    }else{
+      state.speed=settings.gotoMaxThrottle;
     }
 
     const mph=state.speed*0.048;
@@ -538,7 +645,36 @@ qa(".wp").forEach(b=>on(b,"click",()=>{
 }));
 on(by("closeWp"),"click",()=>{const c=by("waypointCard");if(c)c.classList.add("hidden")});
 on(by("goTo"),"click",engageAutopilot);
-on(by("direction"),"click",()=>{if(state.signalLost)return;if(state.zigTroll)cancelZigTroll();else if(navigating)cancelAutopilot()});
+on(by("direction"),"click",()=>{if(state.signalLost||state.steeringFault)return;if(state.zigTroll)cancelZigTroll(true);else if(navigating)cancelAutopilot(true)});
+on(by("resumeAuto"),"click",()=>{
+  if(!resumeState||resumeSeconds<=0||state.signalLost||state.steeringFault)return;
+  const snap={...resumeState};
+  clearResume();
+  if(snap.kind==="goto"){
+    const wp=qa(".wp").find(x=>x.dataset.wp===snap.waypoint);
+    if(!wp)return;
+    selectedWaypointEl=wp;
+    page("controlPage");
+    engageAutopilot(snap.remaining);
+  }else if(snap.kind==="scout"){
+    state.anchor=false;state.hold=false;state.cruise=false;state.zigTroll=true;
+    state.transition=false;state.transitionTarget=0;state.dir=1;
+    state.speed=Math.max(10,Math.min(100,Number(snap.speed)||50));
+    zigBaseHeading=Number(snap.baseHeading)||normalize360(state.currentHeading);
+    zigLeg=snap.leg==="left"?"left":"diag";
+    zigFeet=Math.max(0,Number(snap.feet)||0);
+    applyZigLeg();
+    if(zigTimer)clearInterval(zigTimer);
+    zigTimer=setInterval(()=>{
+      if(!state.zigTroll||state.signalLost||state.steeringFault)return;
+      const mph=state.speed*0.048;
+      zigFeet+=mph*1.46667*.1;
+      const targetFeet=zigLeg==="diag"?75:50;
+      if(zigFeet>=targetFeet){zigFeet=0;zigLeg=zigLeg==="diag"?"left":"diag";applyZigLeg()}
+    },100);
+    render();
+  }
+});
 on(window,"resize",()=>requestAnimationFrame(drawRoute));
 
 
@@ -546,6 +682,7 @@ async function loseSignal(){
   if(state.signalLost)return;
   const token=++motionToken;
   state.signalLost=true;
+  clearResume();
   clearNavTimer();
   navApproachSpeed=null;
   autoSteerToken++;
@@ -680,11 +817,14 @@ function syncSettingsUI(){
   document.body.dataset.theme=settings.theme||"dark";
   qa(".theme").forEach(x=>x.classList.toggle("active",x.dataset.theme===settings.theme));
   qa(".unit").forEach(x=>x.classList.toggle("active",x.dataset.unit===units));
-  const ts=by("throttleStep"),gr=by("gotoRadius"),rs=by("reverseSeconds"),ss=by("steerStep"),sl=by("signalLossSeconds"),as=by("autoSteerSeconds");
+  const ts=by("throttleStep"),gr=by("gotoRadius"),gm=by("gotoMaxThrottle"),gd=by("gotoSlowdownDistance"),rs=by("reverseSeconds"),ss=by("steerStep"),sf=by("steeringFaultTolerance"),sl=by("signalLossSeconds"),as=by("autoSteerSeconds");
   if(ts)ts.value=String(settings.throttleStep);
   if(gr)gr.value=String(settings.gotoRadius);
+  if(gm)gm.value=String(settings.gotoMaxThrottle);
+  if(gd)gd.value=String(settings.gotoSlowdownDistance);
   if(rs)rs.value=String(settings.reverseSeconds);
   if(ss)ss.value=String(settings.steerStep);
+  if(sf)sf.value=String(settings.steeringFaultTolerance);
   if(sl)sl.value=String(settings.signalLossSeconds);
   if(as)as.value=String(settings.autoSteerSeconds);
   safeText("homeOffsetStatus","Home offset: "+Math.round(settings.motorHomeOffset||0)+"°");
@@ -697,8 +837,11 @@ qa(".unit").forEach(b=>on(b,"click",()=>{
 }));
 on(by("throttleStep"),"change",e=>{settings.throttleStep=Math.max(5,Math.min(20,Number(e.target.value)||10));saveSettings()});
 on(by("gotoRadius"),"change",e=>{settings.gotoRadius=Math.max(5,Math.min(1000,Number(e.target.value)||500));e.target.value=settings.gotoRadius;saveSettings()});
+on(by("gotoMaxThrottle"),"change",e=>{settings.gotoMaxThrottle=Math.max(20,Math.min(80,Number(e.target.value)||60));e.target.value=settings.gotoMaxThrottle;saveSettings()});
+on(by("gotoSlowdownDistance"),"change",e=>{settings.gotoSlowdownDistance=Math.max(10,Math.min(100,Number(e.target.value)||25));e.target.value=settings.gotoSlowdownDistance;saveSettings()});
 on(by("reverseSeconds"),"change",e=>{settings.reverseSeconds=Math.max(2,Math.min(10,Number(e.target.value)||5));e.target.value=settings.reverseSeconds;saveSettings()});
 on(by("steerStep"),"change",e=>{settings.steerStep=Math.max(5,Math.min(20,Number(e.target.value)||10));saveSettings()});
+on(by("steeringFaultTolerance"),"change",e=>{settings.steeringFaultTolerance=Math.max(5,Math.min(30,Number(e.target.value)||15));e.target.value=settings.steeringFaultTolerance;saveSettings()});
 on(by("signalLossSeconds"),"change",e=>{settings.signalLossSeconds=Math.max(2,Math.min(10,Number(e.target.value)||5));e.target.value=settings.signalLossSeconds;saveSettings()});
 on(by("autoSteerSeconds"),"change",e=>{settings.autoSteerSeconds=Math.max(2,Math.min(15,Number(e.target.value)||5));e.target.value=settings.autoSteerSeconds;saveSettings()});
 const settingHelp=[
@@ -723,6 +866,16 @@ const settingHelp=[
     text:"Maximum distance from the boat at which GO TO may be started. Allowed range: 5–1,000 ft in 5 ft steps. A smaller radius keeps autonomous runs closer to the boat; a larger radius permits farther waypoint runs."
   },
   {
+    match:a=>a.querySelector("#gotoMaxThrottle"),
+    title:"Go-To Max Throttle",
+    text:"Caps propulsion power during automatic waypoint navigation. Allowed range: 20–80% in 5% steps. Lower values save battery and reduce speed; higher values get to the waypoint faster. Go-To will never intentionally exceed this cap."
+  },
+  {
+    match:a=>a.querySelector("#gotoSlowdownDistance"),
+    title:"Go-To Slowdown Distance",
+    text:"Distance from the waypoint where automatic approach slowdown begins. Allowed range: 10–100 ft in 5 ft steps. A larger value gives a longer, gentler approach; a smaller value holds cruise power closer to the waypoint."
+  },
+  {
     match:a=>a.querySelector("#reverseSeconds"),
     title:"Direction Change Ramp",
     text:"Time used to reduce thrust to zero before changing between Forward and Reverse. Allowed range: 2–10 seconds. Shorter is more responsive; longer is gentler on the motor, mount, wiring, and boat."
@@ -736,6 +889,11 @@ const settingHelp=[
     match:a=>a.querySelector("#autoSteerSeconds"),
     title:"Autopilot Steering Ramp",
     text:"Time for waypoint and Scout Troll heading changes to sweep smoothly to a new heading. Allowed range: 2–15 seconds. Shorter turns more aggressively; longer turns more gently. Spot Lock and manual steering are intentionally not slowed by this setting."
+  },
+  {
+    match:a=>a.querySelector("#steeringFaultTolerance"),
+    title:"Steering Fault Tolerance",
+    text:"Maximum allowed difference between commanded motor angle and reported motor angle. Allowed range: 5–30°. If the error remains larger than this for 2 seconds, propulsion is stopped and autonomous modes are cancelled. Smaller values detect problems sooner but require more accurate steering feedback."
   },
   {
     match:a=>a.querySelector("#signalLossSeconds"),
@@ -799,8 +957,11 @@ function enforceNumberRange(id,min,max,step,fallback){
   });
 }
 enforceNumberRange("gotoRadius",5,1000,5,500);
+enforceNumberRange("gotoMaxThrottle",20,80,5,60);
+enforceNumberRange("gotoSlowdownDistance",10,100,5,25);
 enforceNumberRange("reverseSeconds",2,10,1,5);
 enforceNumberRange("autoSteerSeconds",2,15,1,5);
+enforceNumberRange("steeringFaultTolerance",5,30,1,15);
 enforceNumberRange("signalLossSeconds",2,10,1,5);
 
 syncSettingsUI();
