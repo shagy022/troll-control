@@ -50,6 +50,10 @@ let savedWaypoints=[];
 let waypointEditId=null;
 let waypointDraftType="waypoint";
 let waypointDraftPhotos=[];
+let waypointFilter="all";
+let mapFilter="all";
+let mapZoomIndex=2;
+const mapZoomLevels=[2000,1000,500,250,100];
 try{savedWaypoints=JSON.parse(localStorage.getItem("trollWaypoints")||"[]");if(!Array.isArray(savedWaypoints))savedWaypoints=[]}catch(_){savedWaypoints=[]}
 function saveWaypointStore(){try{localStorage.setItem("trollWaypoints",JSON.stringify(savedWaypoints))}catch(e){alert("Waypoint storage is full. Remove some photos or older waypoints and try again.")}}
 
@@ -126,10 +130,13 @@ function positionOnSteerRing(el,angle,radius,rotate){
 
 function waypointCoordsText(lat=SIM_GPS.lat,lng=SIM_GPS.lng){return Number(lat).toFixed(5)+", "+Number(lng).toFixed(5)}
 function waypointMapPosition(w){
-  const lat=Number(w.lat),lng=Number(w.lng);
-  const dx=(lng-SIM_GPS.lng)*52000;
-  const dy=(lat-SIM_GPS.lat)*69000;
-  return {left:Math.max(7,Math.min(93,56+dx/12)),top:Math.max(8,Math.min(88,50-dy/12))};
+  const range=mapZoomLevels[mapZoomIndex]||500;
+  const latFt=(Number(w.lat)-SIM_GPS.lat)*364000;
+  const lngFt=(Number(w.lng)-SIM_GPS.lng)*307000;
+  const halfRange=Math.max(50,range/2);
+  const left=50+(lngFt/halfRange)*44;
+  const top=50-(latFt/halfRange)*44;
+  return {left,top,visible:left>=4&&left<=96&&top>=5&&top<=95};
 }
 function savedWaypointDistance(w){
   const latFt=(Number(w.lat)-SIM_GPS.lat)*364000;
@@ -155,27 +162,64 @@ function syncSavedWaypointToNav(w){
   };
   return key;
 }
+function waypointMatchesFilter(w,filter){
+  if(!filter||filter==="all")return true;
+  if(filter==="other")return !["fish","structure","hazard","anchor","ramp"].includes(w.type);
+  return w.type===filter;
+}
+function renderFilterBars(){
+  const defs=[
+    ["all","ALL"],["fish","🐟 FISH"],["structure","⌁ STRUCTURE"],["hazard","! HAZARDS"],
+    ["anchor","⚓ ANCHORS"],["ramp","▰ RAMPS"],["grass","♒ GRASS"],["channel","⇢ CHANNEL"],
+    ["bait","◌ BAIT"],["dock","▥ DOCK"],["waypoint","◆ WAYPOINTS"]
+  ];
+  const make=(active)=>defs.map(([id,label])=>'<button type="button" data-filter="'+id+'" class="'+(active===id?'active':'')+'">'+label+'</button>').join("");
+  const w=by("waypointFilterBar"),m=by("mapFilterBar");
+  if(w)w.innerHTML=make(waypointFilter);
+  if(m)m.innerHTML=make(mapFilter);
+}
+function updateMapZoomUI(){
+  const range=mapZoomLevels[mapZoomIndex]||500;
+  safeText("mapZoomLabel",range>=1000?(range/1000).toFixed(range%1000?1:0)+" KFT":range+" FT");
+  const map=q(".mapMock");
+  if(map){
+    let badge=map.querySelector(".mapRangeBadge");
+    if(!badge){badge=document.createElement("div");badge.className="mapRangeBadge";map.appendChild(badge)}
+    badge.textContent="VIEW "+range+" FT";
+    map.classList.remove("zoomPulse");void map.offsetWidth;map.classList.add("zoomPulse");
+  }
+}
 function renderSavedMapMarkers(){
   const map=q(".mapMock");if(!map)return;
   qa(".savedMapMarker").forEach(x=>x.remove());
-  savedWaypoints.forEach(w=>{
+  savedWaypoints.filter(w=>waypointMatchesFilter(w,mapFilter)).forEach(w=>{
     const key=syncSavedWaypointToNav(w),t=waypointTypes[w.type]||waypointTypes.waypoint,p=waypointMapPosition(w);
+    if(!p.visible)return;
     const b=document.createElement("button");
     b.type="button";b.className="savedMapMarker "+w.type;b.dataset.savedId=w.id;b.dataset.wp=key;
     b.textContent=t.icon;b.title=w.name+" • "+t.label;b.style.left=p.left+"%";b.style.top=p.top+"%";
     map.appendChild(b);
   });
+  updateMapZoomUI();
 }
 function renderWaypointList(){
   const list=by("waypointList"),empty=by("waypointEmpty");if(!list)return;
-  if(empty)empty.classList.toggle("hidden",savedWaypoints.length>0);
-  list.innerHTML=savedWaypoints.slice().reverse().map(w=>{
+  const visible=savedWaypoints.filter(w=>waypointMatchesFilter(w,waypointFilter));
+  if(empty){empty.classList.toggle("hidden",visible.length>0);const s=empty.querySelector("span");if(s&&savedWaypoints.length>0&&!visible.length)s.textContent="No saved waypoints match this filter."}
+  list.innerHTML=savedWaypoints.filter(w=>waypointMatchesFilter(w,waypointFilter)).slice().reverse().map(w=>{
     const t=waypointTypes[w.type]||waypointTypes.waypoint;
     const desc=(w.description||"").replace(/[<>&]/g,m=>({"<":"&lt;",">":"&gt;","&":"&amp;"}[m]));
     return '<article class="waypointListCard '+w.type+'" data-list-id="'+w.id+'">'+
       '<div class="wpListHead"><div><small>'+t.label.toUpperCase()+'</small><h3>'+t.icon+' '+w.name.replace(/[<>&]/g,m=>({"<":"&lt;",">":"&gt;","&":"&amp;"}[m]))+'</h3></div><span class="wpIcon">'+t.icon+'</span></div>'+
       '<small>'+waypointCoordsText(w.lat,w.lng)+' • '+new Date(w.createdAt).toLocaleString()+'</small>'+
       (desc?'<p>'+desc.slice(0,150)+(desc.length>150?'…':'')+'</p>':'')+
+      '<div class="savedMetaLine">'+
+        (w.species?'<span>🐟 '+w.species+'</span>':'')+
+        (w.lure?'<span>BAIT '+w.lure+'</span>':'')+
+        (w.depth!==""&&w.depth!=null?'<span>'+w.depth+' ft</span>':'')+
+        (w.waterTemp!==""&&w.waterTemp!=null?'<span>'+w.waterTemp+'°F</span>':'')+
+        (w.tide?'<span>'+w.tide+'</span>':'')+
+      '</div>'+
       '<small>'+(w.photos?.length||0)+' photo'+((w.photos?.length||0)===1?'':'s')+'</small>'+
       '<div class="waypointListActions"><button class="goSaved" data-action="goto" data-id="'+w.id+'">GO TO</button><button data-action="edit" data-id="'+w.id+'">EDIT</button><button class="deleteSaved" data-action="delete" data-id="'+w.id+'">DELETE</button></div>'+
     '</article>';
@@ -192,7 +236,14 @@ function openSavedWaypointCard(w,marker){
     typeEl.textContent=t.icon+" "+t.label.toUpperCase();
     let detail=card.querySelector(".savedWaypointDetail");
     if(!detail){detail=document.createElement("div");detail.className="savedWaypointDetail";card.appendChild(detail)}
-    detail.innerHTML=(w.description?'<p class="note">'+w.description.replace(/[<>&]/g,m=>({"<":"&lt;",">":"&gt;","&":"&amp;"}[m]))+'</p>':'')+
+    detail.innerHTML='<div class="metaGrid">'+
+      (w.species?'<span>🐟 '+w.species+'</span>':'')+
+      (w.lure?'<span>BAIT '+w.lure+'</span>':'')+
+      (w.depth!==""&&w.depth!=null?'<span>DEPTH '+w.depth+' ft</span>':'')+
+      (w.waterTemp!==""&&w.waterTemp!=null?'<span>WATER '+w.waterTemp+'°F</span>':'')+
+      (w.tide?'<span>'+w.tide+'</span>':'')+
+      '</div>'+
+      (w.description?'<p class="note">'+w.description.replace(/[<>&]/g,m=>({"<":"&lt;",">":"&gt;","&":"&amp;"}[m]))+'</p>':'')+
       ((w.photos||[]).length?'<div class="waypointCardPhotos">'+w.photos.map(src=>'<img src="'+src+'" alt="">').join("")+'</div>':'');
     card.classList.remove("hidden");
   }
@@ -206,10 +257,16 @@ function openWaypointEditor(type,id=null){
   waypointDraftPhotos=existing?(existing.photos||[]).slice(0,5):[];
   safeText("waypointEditorType",(waypointTypes[waypointDraftType]||waypointTypes.waypoint).label.toUpperCase());
   safeText("waypointEditorTitle",existing?"EDIT WAYPOINT":"SAVE CURRENT POSITION");
-  const name=by("waypointNameInput"),coords=by("waypointCoordsInput"),desc=by("waypointDescInput"),photos=by("waypointPhotosInput");
+  const name=by("waypointNameInput"),coords=by("waypointCoordsInput"),desc=by("waypointDescInput"),photos=by("waypointPhotosInput"),species=by("waypointSpeciesInput"),lure=by("waypointLureInput"),depth=by("waypointDepthInput"),temp=by("waypointTempInput"),tide=by("waypointTideInput");
   if(name)name.value=existing?existing.name:"";
   if(coords)coords.value=existing?waypointCoordsText(existing.lat,existing.lng):waypointCoordsText();
   if(desc)desc.value=existing?existing.description||"":"";
+  if(species)species.value=existing?existing.species||"":"";
+  if(lure)lure.value=existing?existing.lure||"":"";
+  if(depth)depth.value=existing&&existing.depth!==undefined?existing.depth:"";
+  if(temp)temp.value=existing&&existing.waterTemp!==undefined?existing.waterTemp:"";
+  if(tide)tide.value=existing?existing.tide||"":"";
+  const fishFields=by("fishMetaFields");if(fishFields)fishFields.classList.toggle("hidden",waypointDraftType!=="fish");
   if(photos)photos.value="";
   updateWaypointEditorCounts();renderWaypointPhotoPreview();
   const ov=by("waypointEditor");if(ov)ov.classList.remove("hidden");
@@ -255,11 +312,16 @@ function commitWaypoint(){
   const name=(by("waypointNameInput")?.value||"").trim();
   if(!name){alert("Enter a name for this location.");return}
   const description=(by("waypointDescInput")?.value||"").trim().slice(0,500);
+  const species=(by("waypointSpeciesInput")?.value||"").trim().slice(0,50);
+  const lure=(by("waypointLureInput")?.value||"").trim().slice(0,80);
+  const depth=(by("waypointDepthInput")?.value||"").trim();
+  const waterTemp=(by("waypointTempInput")?.value||"").trim();
+  const tide=(by("waypointTideInput")?.value||"").trim().slice(0,50);
   if(waypointEditId){
     const w=savedWaypoints.find(x=>x.id===waypointEditId);if(!w)return;
-    w.name=name;w.description=description;w.photos=waypointDraftPhotos.slice(0,5);w.type=waypointDraftType;
+    w.name=name;w.description=description;w.photos=waypointDraftPhotos.slice(0,5);w.type=waypointDraftType;w.species=species;w.lure=lure;w.depth=depth;w.waterTemp=waterTemp;w.tide=tide;
   }else{
-    savedWaypoints.push({id:"wp"+Date.now(),type:waypointDraftType,name,lat:SIM_GPS.lat,lng:SIM_GPS.lng,description,photos:waypointDraftPhotos.slice(0,5),createdAt:Date.now()});
+    savedWaypoints.push({id:"wp"+Date.now(),type:waypointDraftType,name,lat:SIM_GPS.lat,lng:SIM_GPS.lng,description,species,lure,depth,waterTemp,tide,photos:waypointDraftPhotos.slice(0,5),createdAt:Date.now()});
   }
   saveWaypointStore();renderSavedWaypoints();closeWaypointEditor();
 }
@@ -468,8 +530,8 @@ function page(id){
   qa("nav button[data-page]").forEach(x=>x.classList.toggle("active",x.dataset.page===id));
   try{window.scrollTo({top:0,behavior:"instant"})}catch(_){window.scrollTo(0,0)}
   if(id==="controlPage")requestAnimationFrame(render);
-  if(id==="waypointsPage")renderWaypointList();
-  if(id==="mapPage")renderSavedMapMarkers();
+  if(id==="waypointsPage"){renderFilterBars();renderWaypointList()}
+  if(id==="mapPage"){renderFilterBars();renderSavedMapMarkers()}
 }
 
 function setSteer(v){
@@ -911,6 +973,17 @@ on(by("resumeAuto"),"click",()=>{
   }
 });
 
+on(by("waypointFilterBar"),"click",e=>{
+  const b=e.target.closest("button[data-filter]");if(!b)return;
+  waypointFilter=b.dataset.filter||"all";renderFilterBars();renderWaypointList();
+});
+on(by("mapFilterBar"),"click",e=>{
+  const b=e.target.closest("button[data-filter]");if(!b)return;
+  mapFilter=b.dataset.filter||"all";renderFilterBars();renderSavedMapMarkers();
+});
+on(by("mapZoomIn"),"click",()=>{if(mapZoomIndex<mapZoomLevels.length-1){mapZoomIndex++;renderSavedMapMarkers()}});
+on(by("mapZoomOut"),"click",()=>{if(mapZoomIndex>0){mapZoomIndex--;renderSavedMapMarkers()}});
+on(by("mapCenterBoat"),"click",()=>{renderSavedMapMarkers()});
 qa("[data-add-type]").forEach(b=>on(b,"click",()=>openWaypointEditor(b.dataset.addType)));
 on(by("closeWaypointEditor"),"click",closeWaypointEditor);
 on(by("cancelWaypointSave"),"click",closeWaypointEditor);
@@ -1234,7 +1307,9 @@ syncSettingsUI();
 window.addEventListener("error",e=>console.error("TROLL runtime error",e.error||e.message));
 window.addEventListener("unhandledrejection",e=>console.error("TROLL promise error",e.reason));
 
+renderFilterBars();
 renderSavedWaypoints();
+updateMapZoomUI();
 renderPreflightRows();
 render();
 runPreflight();
