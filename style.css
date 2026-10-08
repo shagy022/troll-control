@@ -429,3 +429,28 @@ body[data-theme="classic"] .settingInfoBtn{background:#f3f5f6;color:#006fa3}
 .savedMetaLine span{font-size:8px;border:1px solid var(--line);border-radius:8px;padding:3px 6px;color:#cfe1e6;background:#071116}
 .savedWaypointDetail .metaGrid{display:flex;flex-wrap:wrap;gap:5px;margin:6px 0}
 .savedWaypointDetail .metaGrid span{font-size:8px;border:1px solid var(--line);border-radius:8px;padding:3px 6px;color:#d2e4e9}
+
+/* v0.28.0 live auto throttle + waypoint detail viewer */
+.autoThrottlePanel{margin:-3px 0 10px;text-align:center;border:1px solid var(--line);border-radius:12px;padding:8px;background:#08151b}
+.autoThrottlePanel>span{display:block;font-size:8px;font-weight:900;letter-spacing:1px;color:var(--muted);margin-bottom:6px}
+.autoThrottlePanel>div{display:grid;grid-template-columns:repeat(3,1fr);gap:6px}
+.autoThrottlePanel button{height:38px;border:1px solid var(--line);border-radius:9px;background:#0d2028;color:#cfe2e7;font-weight:900}
+.autoThrottlePanel button.active{border-color:var(--cyan);background:#07303b;color:var(--cyan);box-shadow:0 0 10px #0bc8ff33}
+.waypointListCard{cursor:pointer}
+.waypointDetailCard{width:min(430px,100%);max-height:90dvh;overflow:auto;background:linear-gradient(#0d1a20,#081116);border:1px solid var(--line);border-radius:20px;padding:18px;box-shadow:0 18px 70px #000}
+.waypointDetailHead{display:flex;justify-content:space-between;align-items:flex-start;gap:10px}
+.waypointDetailHead small{font-size:9px;color:var(--cyan);font-weight:900;letter-spacing:1px}
+.waypointDetailHead h3{margin:3px 0 8px;font-size:19px}
+.waypointDetailHead button{background:none;border:0;color:white;font-size:28px}
+.waypointDetailCoords{font-size:10px;color:var(--muted);margin-bottom:8px}
+.waypointDetailDescription{font-size:11px;line-height:1.45;color:#d2e4e9;white-space:pre-wrap}
+.waypointDetailPhotos{display:grid;grid-template-columns:repeat(3,1fr);gap:7px;margin:10px 0}
+.waypointDetailPhotos img,.waypointCardPhotos img{cursor:pointer}
+.waypointDetailPhotos img{width:100%;aspect-ratio:1;object-fit:cover;border-radius:9px;border:1px solid var(--line)}
+.waypointDetailActions{display:grid;grid-template-columns:1.3fr 1fr 1fr;gap:7px;margin-top:12px}
+.waypointDetailActions button{height:42px;border-radius:10px;font-size:10px;font-weight:900;background:#0b2028;color:white;border:1px solid var(--line)}
+#detailGoTo{border-color:var(--cyan);color:var(--cyan)}
+#detailDelete{border-color:#68302f;color:#ff746f}
+.photoLightbox{position:fixed;inset:0;z-index:500;background:#000d;display:grid;place-items:center;padding:12px}
+.photoLightbox img{width:auto;height:auto;max-width:75vw;max-height:75vh;object-fit:contain;border-radius:12px;border:1px solid #ffffff33;box-shadow:0 20px 80px #000}
+.photoLightboxClose{position:fixed;top:max(18px,env(safe-area-inset-top));right:18px;width:46px;height:46px;border-radius:50%;border:1px solid #ffffff55;background:#091014dd;color:white;font-size:29px;z-index:501}
