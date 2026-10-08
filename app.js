@@ -634,7 +634,7 @@ qa(".unit").forEach(b=>on(b,"click",()=>{
   settings.units=b.dataset.unit==="knots"?"knots":"mph";saveSettings();syncSettingsUI();render();
 }));
 on(by("throttleStep"),"change",e=>{settings.throttleStep=Math.max(5,Math.min(20,Number(e.target.value)||10));saveSettings()});
-on(by("gotoRadius"),"change",e=>{settings.gotoRadius=Math.max(100,Math.min(1000,Number(e.target.value)||500));e.target.value=settings.gotoRadius;saveSettings()});
+on(by("gotoRadius"),"change",e=>{settings.gotoRadius=Math.max(5,Math.min(1000,Number(e.target.value)||500));e.target.value=settings.gotoRadius;saveSettings()});
 on(by("reverseSeconds"),"change",e=>{settings.reverseSeconds=Math.max(2,Math.min(10,Number(e.target.value)||5));e.target.value=settings.reverseSeconds;saveSettings()});
 on(by("steerStep"),"change",e=>{settings.steerStep=Math.max(5,Math.min(20,Number(e.target.value)||10));saveSettings()});
 on(by("signalLossSeconds"),"change",e=>{settings.signalLossSeconds=Math.max(2,Math.min(10,Number(e.target.value)||5));e.target.value=settings.signalLossSeconds;saveSettings()});
@@ -658,7 +658,7 @@ const settingHelp=[
   {
     match:a=>a.querySelector("#gotoRadius"),
     title:"Go-To Safety Radius",
-    text:"Maximum distance from the boat at which GO TO may be started. Allowed range: 100–1,000 ft in 50 ft steps. A smaller radius keeps autonomous runs closer to the boat; a larger radius permits farther waypoint runs."
+    text:"Maximum distance from the boat at which GO TO may be started. Allowed range: 5–1,000 ft in 5 ft steps. A smaller radius keeps autonomous runs closer to the boat; a larger radius permits farther waypoint runs."
   },
   {
     match:a=>a.querySelector("#reverseSeconds"),
@@ -736,7 +736,7 @@ function enforceNumberRange(id,min,max,step,fallback){
     if(["e","E","+","-"].includes(e.key))e.preventDefault();
   });
 }
-enforceNumberRange("gotoRadius",100,1000,50,500);
+enforceNumberRange("gotoRadius",5,1000,5,500);
 enforceNumberRange("reverseSeconds",2,10,1,5);
 enforceNumberRange("autoSteerSeconds",2,15,1,5);
 enforceNumberRange("signalLossSeconds",2,10,1,5);
