@@ -426,6 +426,7 @@ let navigating=false;
 let activeWaypointName="";
 let navTimer=null;
 let navRemaining=0;
+let navApproachSpeed=null;
 
 function clearNavTimer(){
   if(navTimer){clearInterval(navTimer);navTimer=null}
@@ -433,6 +434,7 @@ function clearNavTimer(){
 function completeGoTo(){
   if(!navigating)return;
   clearNavTimer();
+  navApproachSpeed=null;
   autoSteerToken++;
   navigating=false;
   const arrivedName=activeWaypointName;
@@ -455,6 +457,7 @@ function completeGoTo(){
 function cancelAutopilot(){
   autoSteerToken++;
   clearNavTimer();
+  navApproachSpeed=null;
   if(!navigating)return;
   navigating=false;
   activeWaypointName="";
@@ -482,14 +485,24 @@ function engageAutopilot(){
   }
   const go=by("goTo"); if(go){go.textContent="NAVIGATING…";go.classList.add("navigating")}
   navRemaining=w.distance;
+  navApproachSpeed=null;
   state.dir=1;
   if(state.speed<30)state.speed=50;
   safeText("goNote","Navigating to waypoint • arrival will engage Spot Lock");
   clearNavTimer();
   navTimer=setInterval(()=>{
     if(!navigating||state.signalLost){clearNavTimer();return}
+
+    // Inside 20 ft, progressively reduce thrust as we approach the waypoint.
+    // Capture the speed at entry so the ramp is smooth and predictable.
+    if(navRemaining<=20){
+      if(navApproachSpeed===null)navApproachSpeed=Math.max(10,state.speed);
+      const progress=Math.max(0,Math.min(1,(navRemaining-3)/17));
+      state.speed=Math.max(8,navApproachSpeed*progress);
+    }
+
     const mph=state.speed*0.048;
-    const feetPerTick=Math.max(.25,mph*1.46667*.25);
+    const feetPerTick=Math.max(.15,mph*1.46667*.25);
     navRemaining=Math.max(0,navRemaining-feetPerTick);
     safeText("wpDistance",Math.max(0,Math.round(navRemaining))+" ft");
     safeText("goNote","Navigating to waypoint • arrival will engage Spot Lock");
@@ -534,6 +547,7 @@ async function loseSignal(){
   const token=++motionToken;
   state.signalLost=true;
   clearNavTimer();
+  navApproachSpeed=null;
   autoSteerToken++;
   state.transition=false;state.transitionTarget=0;
   state.anchor=false;
