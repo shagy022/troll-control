@@ -112,6 +112,7 @@ function render(){
 
   const amps=state.speed*0.52;
   safeText("amps",amps.toFixed(1)+" A");
+  safeText("liveAmps",amps.toFixed(1)+" A");
   safeText("watts",Math.round(amps*37.8)+" W");
   safeText("runtime",amps>1?(76/amps).toFixed(1)+" h":"--");
 }
