@@ -409,7 +409,7 @@ on(by("cruise"),"click",()=>{if(state.signalLost||state.zigTroll)return;state.cr
 qa(".accuracyBtns button").forEach(b=>on(b,"click",()=>{state.spotAccuracy=b.dataset.accuracy||"medium";render();}));
 on(by("exitSpotLock"),"click",stopSpotLock);
 on(by("zig"),"click",()=>state.zigTroll?cancelZigTroll():startZigTroll());
-on(by("stop"),"click",()=>{if(spotTimer){clearInterval(spotTimer);spotTimer=null}autoSteerToken++;if(state.zigTroll)cancelZigTroll();motionToken++;if(zigTimer){clearInterval(zigTimer);zigTimer=null} state.zigTroll=false;zigFeet=0;zigLeg="diag"; if(spotTimer){clearInterval(spotTimer);spotTimer=null} state.speed=0;state.dir=0;state.anchor=false;state.hold=false;state.cruise=false;state.transition=false;state.transitionTarget=0;if(navigating){navigating=false;activeWaypointName="";const route=by("routeSvg");if(route)route.classList.remove("on");const go=by("goTo");if(go){go.textContent="GO TO";go.classList.remove("navigating")}}render()});
+on(by("stop"),"click",()=>{clearNavTimer();if(spotTimer){clearInterval(spotTimer);spotTimer=null}autoSteerToken++;if(state.zigTroll)cancelZigTroll();motionToken++;if(zigTimer){clearInterval(zigTimer);zigTimer=null} state.zigTroll=false;zigFeet=0;zigLeg="diag"; if(spotTimer){clearInterval(spotTimer);spotTimer=null} state.speed=0;state.dir=0;state.anchor=false;state.hold=false;state.cruise=false;state.transition=false;state.transitionTarget=0;if(navigating){navigating=false;activeWaypointName="";const route=by("routeSvg");if(route)route.classList.remove("on");const go=by("goTo");if(go){go.textContent="GO TO";go.classList.remove("navigating")}}render()});
 
 const wpData={
   "Rock Pile":{coords:"30.12345, -83.45678",distance:286,bearing:"042°"},
@@ -419,9 +419,37 @@ const wpData={
 let selectedWaypointEl=null;
 let navigating=false;
 let activeWaypointName="";
+let navTimer=null;
+let navRemaining=0;
 
+function clearNavTimer(){
+  if(navTimer){clearInterval(navTimer);navTimer=null}
+}
+function completeGoTo(){
+  if(!navigating)return;
+  clearNavTimer();
+  autoSteerToken++;
+  navigating=false;
+  const arrivedName=activeWaypointName;
+  activeWaypointName="";
+  state.speed=0;
+  state.dir=0;
+  const route=by("routeSvg");if(route)route.classList.remove("on");
+  const go=by("goTo");if(go){go.textContent="GO TO";go.classList.remove("navigating")}
+  safeText("goNote",arrivedName?"Arrived at "+arrivedName+" • Spot Lock engaged":"Arrived • Spot Lock engaged");
+  page("controlPage");
+  // Handoff the reached waypoint position to Spot Lock.
+  state.anchor=true;
+  state.hold=false;
+  state.cruise=false;
+  state.zigTroll=false;
+  spotDx=0;spotDy=0;
+  startSpotSimulation();
+  render();
+}
 function cancelAutopilot(){
   autoSteerToken++;
+  clearNavTimer();
   if(!navigating)return;
   navigating=false;
   activeWaypointName="";
@@ -448,7 +476,20 @@ function engageAutopilot(){
     smoothAutoSteer(normalize180(targetBearing-state.currentHeading),settings.autoSteerSeconds);
   }
   const go=by("goTo"); if(go){go.textContent="NAVIGATING…";go.classList.add("navigating")}
-  safeText("goNote","Auto pilot active • steering locked • tap EXIT AUTO PILOT to cancel");
+  navRemaining=w.distance;
+  state.dir=1;
+  if(state.speed<30)state.speed=50;
+  safeText("goNote","Auto pilot active • "+Math.round(navRemaining)+" ft remaining • arrival will engage Spot Lock");
+  clearNavTimer();
+  navTimer=setInterval(()=>{
+    if(!navigating||state.signalLost){clearNavTimer();return}
+    const mph=state.speed*0.048;
+    const feetPerTick=Math.max(.25,mph*1.46667*.25);
+    navRemaining=Math.max(0,navRemaining-feetPerTick);
+    safeText("wpDistance",Math.max(0,Math.round(navRemaining))+" ft");
+    safeText("goNote","Auto pilot active • "+Math.max(0,Math.round(navRemaining))+" ft remaining • arrival will engage Spot Lock");
+    if(navRemaining<=3)completeGoTo();
+  },250);
   render();
   requestAnimationFrame(drawRoute);
 }
@@ -486,6 +527,7 @@ async function loseSignal(){
   if(state.signalLost)return;
   const token=++motionToken;
   state.signalLost=true;
+  clearNavTimer();
   autoSteerToken++;
   state.transition=false;state.transitionTarget=0;
   state.anchor=false;
