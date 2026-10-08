@@ -194,3 +194,6 @@ body[data-theme="highvis"] .ampDraw b{color:#63e28f}
 .helm{width:min(68.4vw,279px)!important}
 .steerKnob{width:26px!important;height:26px!important}
 @media(max-width:380px){.helm{width:239px!important}}
+
+/* v0.17.3 helm/throttle separation */
+.helm{transform:translateX(2px)!important}
