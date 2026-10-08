@@ -155,11 +155,12 @@ function render(){
   const lit=Math.round(state.speed/2.5);
   qa(".thrustDot").forEach((d,i)=>d.classList.toggle("on",i<lit));
 
+  const visualSteer=(state.dir<0&&state.steer<0)?state.steer+360:state.steer;
   if(ring){
-    positionOnSteerRing(knob,state.steer,ring.clientWidth/2-2,false);
-    positionOnSteerRing(headingMarker,state.steer,ring.clientWidth/2-22,true);
+    positionOnSteerRing(knob,visualSteer,ring.clientWidth/2-2,false);
+    positionOnSteerRing(headingMarker,visualSteer,ring.clientWidth/2-22,true);
   }
-  if(desiredArrow)desiredArrow.style.transform="translate(-50%,-50%) rotate("+state.steer+"deg)";
+  if(desiredArrow)desiredArrow.style.transform="translate(-50%,-50%) rotate("+visualSteer+"deg)";
 
   const amps=state.speed*0.52;
   safeText("amps",amps.toFixed(1)+" A");
@@ -633,11 +634,113 @@ qa(".unit").forEach(b=>on(b,"click",()=>{
   settings.units=b.dataset.unit==="knots"?"knots":"mph";saveSettings();syncSettingsUI();render();
 }));
 on(by("throttleStep"),"change",e=>{settings.throttleStep=Math.max(5,Math.min(20,Number(e.target.value)||10));saveSettings()});
-on(by("gotoRadius"),"change",e=>{settings.gotoRadius=Math.max(100,Math.min(2000,Number(e.target.value)||500));e.target.value=settings.gotoRadius;saveSettings()});
-on(by("reverseSeconds"),"change",e=>{settings.reverseSeconds=Math.max(1,Math.min(10,Number(e.target.value)||5));e.target.value=settings.reverseSeconds;saveSettings()});
+on(by("gotoRadius"),"change",e=>{settings.gotoRadius=Math.max(100,Math.min(1000,Number(e.target.value)||500));e.target.value=settings.gotoRadius;saveSettings()});
+on(by("reverseSeconds"),"change",e=>{settings.reverseSeconds=Math.max(2,Math.min(10,Number(e.target.value)||5));e.target.value=settings.reverseSeconds;saveSettings()});
 on(by("steerStep"),"change",e=>{settings.steerStep=Math.max(5,Math.min(20,Number(e.target.value)||10));saveSettings()});
-on(by("signalLossSeconds"),"change",e=>{settings.signalLossSeconds=Math.max(1,Math.min(10,Number(e.target.value)||5));e.target.value=settings.signalLossSeconds;saveSettings()});
-on(by("autoSteerSeconds"),"change",e=>{settings.autoSteerSeconds=Math.max(1,Math.min(15,Number(e.target.value)||5));e.target.value=settings.autoSteerSeconds;saveSettings()});
+on(by("signalLossSeconds"),"change",e=>{settings.signalLossSeconds=Math.max(2,Math.min(10,Number(e.target.value)||5));e.target.value=settings.signalLossSeconds;saveSettings()});
+on(by("autoSteerSeconds"),"change",e=>{settings.autoSteerSeconds=Math.max(2,Math.min(15,Number(e.target.value)||5));e.target.value=settings.autoSteerSeconds;saveSettings()});
+const settingHelp=[
+  {
+    match:a=>a.querySelector(".themeBtns"),
+    title:"Color Theme",
+    text:"Changes only the app appearance. It does not change motor behavior. Choose any of the six built-in themes; there is no numeric range."
+  },
+  {
+    match:a=>a.querySelector(".toggleBtns"),
+    title:"Speed Units",
+    text:"Changes speed display between MPH and knots. This affects display units only, not motor output or autopilot behavior."
+  },
+  {
+    match:a=>a.querySelector("#throttleStep"),
+    title:"Throttle Step",
+    text:"Controls how much each Forward or Reverse tap changes commanded throttle. Allowed choices: 5%, 10%, 15%, or 20% per tap. Smaller steps give finer control; larger steps reach high power faster."
+  },
+  {
+    match:a=>a.querySelector("#gotoRadius"),
+    title:"Go-To Safety Radius",
+    text:"Maximum distance from the boat at which GO TO may be started. Allowed range: 100–1,000 ft in 50 ft steps. A smaller radius keeps autonomous runs closer to the boat; a larger radius permits farther waypoint runs."
+  },
+  {
+    match:a=>a.querySelector("#reverseSeconds"),
+    title:"Direction Change Ramp",
+    text:"Time used to reduce thrust to zero before changing between Forward and Reverse. Allowed range: 2–10 seconds. Shorter is more responsive; longer is gentler on the motor, mount, wiring, and boat."
+  },
+  {
+    match:a=>a.querySelector("#steerStep"),
+    title:"Steering Step",
+    text:"Changes how far the left/right steering buttons move the motor per tap. Allowed choices: 5°, 10°, 15°, or 20°. Smaller steps give finer aiming; larger steps turn faster."
+  },
+  {
+    match:a=>a.querySelector("#autoSteerSeconds"),
+    title:"Autopilot Steering Ramp",
+    text:"Time for waypoint and Scout Troll heading changes to sweep smoothly to a new heading. Allowed range: 2–15 seconds. Shorter turns more aggressively; longer turns more gently. Spot Lock and manual steering are intentionally not slowed by this setting."
+  },
+  {
+    match:a=>a.querySelector("#signalLossSeconds"),
+    title:"Signal-Loss Ramp Down",
+    text:"Time used to reduce propulsion to zero after control signal is lost. Allowed range: 2–10 seconds. Shorter stops propulsion sooner; longer makes the slowdown gentler. The real safety version must run onboard, not on the phone."
+  },
+  {
+    match:a=>a.querySelector("#simulateSignal"),
+    title:"Signal-Loss Test",
+    text:"Simulator-only test for the loss-of-signal behavior. It lets you verify the warning state and ramp-down response without disconnecting real hardware."
+  },
+  {
+    match:a=>a.querySelector("#calibrateSteering"),
+    title:"Motor Steering Calibration",
+    text:"Sets the physical motor position that counts as straight ahead / 12:00 for this boat and mount. Calibration should always be done with propulsion at zero and with the steering area clear."
+  },
+  {
+    match:a=>a.textContent.includes("Motor Controller"),
+    title:"Motor Controller",
+    text:"Shows the currently connected propulsion controller. It is read-only in the simulator. Real hardware status and controller faults will appear here later."
+  },
+  {
+    match:a=>a.textContent.includes("Battery BMS"),
+    title:"Battery BMS",
+    text:"Shows the Bluetooth battery-management-system connection. When supported, it can provide live voltage, current draw, state of charge, temperatures, cell data, and alarms."
+  }
+];
+function showSettingHelp(title,body){
+  safeText("helpTitle",title);
+  safeText("helpText",body);
+  const ov=by("helpOverlay");if(ov)ov.classList.remove("hidden");
+}
+qa("#settingsPage .settingsList article").forEach(article=>{
+  const info=settingHelp.find(x=>x.match(article));
+  if(!info)return;
+  const btn=document.createElement("button");
+  btn.type="button";btn.className="settingInfoBtn";btn.textContent="🔍";
+  btn.setAttribute("aria-label","About "+info.title);
+  btn.title="About "+info.title;
+  on(btn,"click",()=>showSettingHelp(info.title,info.text));
+  article.appendChild(btn);
+});
+on(by("helpClose"),"click",()=>{const ov=by("helpOverlay");if(ov)ov.classList.add("hidden")});
+on(by("helpOverlay"),"click",e=>{if(e.target===by("helpOverlay"))by("helpOverlay").classList.add("hidden")});
+
+function enforceNumberRange(id,min,max,step,fallback){
+  const el=by(id);if(!el)return;
+  const clamp=()=>{
+    let v=Number(el.value);
+    if(!Number.isFinite(v))v=fallback;
+    v=Math.max(min,Math.min(max,v));
+    if(step>0)v=Math.round(v/step)*step;
+    v=Math.max(min,Math.min(max,v));
+    el.value=String(v);
+    el.setCustomValidity("");
+  };
+  on(el,"change",clamp);
+  on(el,"blur",clamp);
+  on(el,"keydown",e=>{
+    if(["e","E","+","-"].includes(e.key))e.preventDefault();
+  });
+}
+enforceNumberRange("gotoRadius",100,1000,50,500);
+enforceNumberRange("reverseSeconds",2,10,1,5);
+enforceNumberRange("autoSteerSeconds",2,15,1,5);
+enforceNumberRange("signalLossSeconds",2,10,1,5);
+
 syncSettingsUI();
 
 window.addEventListener("error",e=>console.error("TROLL runtime error",e.error||e.message));
