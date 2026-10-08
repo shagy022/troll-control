@@ -61,3 +61,61 @@ header span.noSignalStatus{color:var(--red)!important;animation:dangerBlink .9s 
 .calAdjust button{min-height:52px;border-radius:12px;border:1px solid var(--line);background:#101e24;color:var(--text);font-weight:900}
 .calAdjust div{text-align:center}.calAdjust b,.calAdjust span{display:block}.calAdjust b{font-size:24px;color:var(--cyan)}.calAdjust span{font-size:9px;color:var(--muted);margin-top:4px}
 .calibrationLock{opacity:.3!important;pointer-events:none!important}
+
+/* v0.15 themes + autopilot locks */
+.modes button:disabled{opacity:.28!important;filter:grayscale(.6);cursor:not-allowed!important}
+body[data-theme="classic"]{
+  --bg:#f5f7f9;--panel:#ffffff;--line:#c8d0d7;--cyan:#006fa3;--green:#008a57;--red:#c62828;--text:#172027;--muted:#66717a;
+  background:#e9edf0;color:var(--text)
+}
+body[data-theme="classic"] .app{background:linear-gradient(#f9fbfc,#eef2f4)}
+body[data-theme="classic"] .telemetry div,
+body[data-theme="classic"] .modes button,
+body[data-theme="classic"] .wide,
+body[data-theme="classic"] .batteryGrid article,
+body[data-theme="classic"] .statsGrid article,
+body[data-theme="classic"] .panel,
+body[data-theme="classic"] .settingsList article{background:#fff;border-color:var(--line);color:var(--text)}
+body[data-theme="classic"] .helm{background:radial-gradient(circle,#eaf3f6 0 29%,#f6f8f9 30% 58%,#edf2f4 59%);border-color:#aebbc3;box-shadow:inset 0 0 35px #d9e4e8}
+body[data-theme="classic"] .turn{background:#fff;color:#1e2a31;border-color:#b4c0c7}
+body[data-theme="classic"] nav{background:#fff;border-color:#cfd6db}
+body[data-theme="classic"] .drawer,
+body[data-theme="classic"] .calibrationCard,
+body[data-theme="classic"] .helpCard,
+body[data-theme="classic"] .waypointCard{background:#fff;color:var(--text);border-color:var(--line)}
+body[data-theme="classic"] .drawer>button,
+body[data-theme="classic"] .settingControl select,
+body[data-theme="classic"] .settingControl input,
+body[data-theme="classic"] .calSecondary,
+body[data-theme="classic"] .calAdjust button{background:#f3f5f6;color:var(--text);border-color:var(--line)}
+body[data-theme="classic"] .icon{color:#172027}
+body[data-theme="classic"] .soc>div{background:#fff}
+body[data-theme="classic"] .stop{background:#fff0f0}
+body[data-theme="classic"] .direction{color:#3f4b53}
+body[data-theme="classic"] .calibrationCard p,
+body[data-theme="classic"] .helpCard p{color:#526069}
+
+body[data-theme="gunmetal"]{
+  --bg:#2b2f33;--panel:#353a3f;--line:#626a70;--cyan:#7ec8e3;--green:#56d39b;--red:#ff6a64;--text:#f1f3f4;--muted:#aab1b6;
+  background:#1e2124;color:var(--text)
+}
+body[data-theme="gunmetal"] .app{background:radial-gradient(circle at 50% 28%,#454b50 0,#2b2f33 46%)}
+body[data-theme="gunmetal"] .telemetry div,
+body[data-theme="gunmetal"] .modes button,
+body[data-theme="gunmetal"] .wide,
+body[data-theme="gunmetal"] .batteryGrid article,
+body[data-theme="gunmetal"] .statsGrid article,
+body[data-theme="gunmetal"] .panel,
+body[data-theme="gunmetal"] .settingsList article{background:linear-gradient(#3b4146,#30353a);border-color:#596168}
+body[data-theme="gunmetal"] .helm{background:radial-gradient(circle,#41484d 0 29%,#30353a 30% 58%,#3a4045 59%);border-color:#69737a;box-shadow:inset 0 0 40px #23272a}
+body[data-theme="gunmetal"] .turn{background:#3e4449;color:#f1f3f4;border-color:#717b82}
+body[data-theme="gunmetal"] nav{background:#292e32ee;border-color:#596168}
+body[data-theme="gunmetal"] .drawer,
+body[data-theme="gunmetal"] .calibrationCard,
+body[data-theme="gunmetal"] .helpCard,
+body[data-theme="gunmetal"] .waypointCard{background:#30353a;border-color:#626a70}
+body[data-theme="gunmetal"] .drawer>button,
+body[data-theme="gunmetal"] .settingControl select,
+body[data-theme="gunmetal"] .settingControl input,
+body[data-theme="gunmetal"] .calSecondary,
+body[data-theme="gunmetal"] .calAdjust button{background:#3a4045;color:var(--text);border-color:#626a70}
