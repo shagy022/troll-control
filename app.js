@@ -19,6 +19,16 @@ let steeringFaultSince=0;
 let resumeTimer=null;
 let resumeSeconds=0;
 let resumeState=null;
+let preflightMode="checking"; // checking | ready | manualOnly | locked
+let preflightComplete=false;
+const preflightChecks=[
+  {id:"controlLink",label:"Control Link",detail:"Command link / failsafe communication",safety:true,pass:true},
+  {id:"motorController",label:"Motor Controller",detail:"Propulsion controller ready",safety:true,pass:true},
+  {id:"steeringFeedback",label:"Steering Feedback",detail:"Motor angle sensor responding",safety:true,pass:true},
+  {id:"batteryPower",label:"Battery Power",detail:"Voltage and power system within safe range",safety:true,pass:true},
+  {id:"gpsFix",label:"GPS Fix",detail:"Required for Spot Lock and autonomous navigation",safety:false,pass:true},
+  {id:"compass",label:"Compass / Heading",detail:"Required for heading-based autopilot modes",safety:false,pass:true}
+];
 const settings={throttleStep:10,gotoRadius:500,gotoMaxThrottle:60,gotoSlowdownDistance:25,reverseSeconds:5,steerStep:10,steeringFaultTolerance:15,signalLossSeconds:5,autoSteerSeconds:5,motorHomeOffset:0,theme:"dark"};
 try{Object.assign(settings,JSON.parse(localStorage.getItem("trollSettings")||"{}"))}catch(_){} const allowedThemes=["dark","classic","gunmetal","deepsea","nightvision","highvis"];if(!allowedThemes.includes(settings.theme))settings.theme="dark";
 function saveSettings(){try{localStorage.setItem("trollSettings",JSON.stringify(settings))}catch(_){}}
@@ -92,6 +102,63 @@ function positionOnSteerRing(el,angle,radius,rotate){
 }
 
 
+function renderPreflightRows(){
+  const list=by("preflightList");if(!list)return;
+  list.innerHTML=preflightChecks.map(c=>
+    '<div class="preflightRow" id="pf-'+c.id+'"><div><b>'+c.label+'</b><small>'+c.detail+(c.safety?' • SAFETY CRITICAL':' • AUTOPILOT REQUIRED')+'</small></div><span class="pfStatus">…</span></div>'
+  ).join("");
+}
+function setPreflightRow(check,status){
+  const row=by("pf-"+check.id);if(!row)return;
+  row.className="preflightRow "+status;
+  const s=row.querySelector(".pfStatus");
+  if(s)s.textContent=status==="checking"?"…":status==="pass"?"✓":"✕";
+}
+function applyPreflightRestrictions(){
+  const safetyFail=preflightChecks.some(c=>c.safety&&!c.pass);
+  const nonSafetyFail=preflightChecks.some(c=>!c.safety&&!c.pass);
+  preflightMode=safetyFail?"locked":nonSafetyFail?"manualOnly":"ready";
+  preflightComplete=true;
+  const result=by("preflightResult"),note=by("preflightNote"),btn=by("preflightContinue");
+  if(result){
+    result.className="preflightResult "+(preflightMode==="ready"?"ready":preflightMode==="manualOnly"?"manual":"locked");
+    result.textContent=preflightMode==="ready"?"✓ SYSTEM READY":preflightMode==="manualOnly"?"⚠ MANUAL CONTROL ONLY":"✕ MOTOR LOCKED";
+  }
+  if(note){
+    note.textContent=preflightMode==="ready"
+      ?"All required systems passed. Manual and autopilot functions are available."
+      :preflightMode==="manualOnly"
+        ?"A non-safety navigation system failed. Manual steering and throttle remain available, but Spot Lock and all autopilot modes are disabled."
+        :"A safety-critical system failed. Motor propulsion and steering commands are locked until the fault is corrected and pre-flight passes.";
+  }
+  if(btn){btn.textContent=preflightMode==="locked"?"ACKNOWLEDGE":"CONTINUE";btn.classList.remove("hidden")}
+  render();
+}
+async function runPreflight(){
+  preflightMode="checking";preflightComplete=false;
+  renderPreflightRows();
+  const bar=by("preflightBar"),pct=by("preflightPercent"),result=by("preflightResult"),btn=by("preflightContinue");
+  if(btn)btn.classList.add("hidden");
+  if(result){result.className="preflightResult";result.textContent="CHECKING SYSTEMS…"}
+  for(let i=0;i<preflightChecks.length;i++){
+    const c=preflightChecks[i];
+    setPreflightRow(c,"checking");
+    const startPct=Math.round(i/preflightChecks.length*100);
+    if(bar)bar.style.width=startPct+"%";if(pct)pct.textContent=startPct+"%";
+    await new Promise(r=>setTimeout(r,420));
+    setPreflightRow(c,c.pass?"pass":"fail");
+    const endPct=Math.round((i+1)/preflightChecks.length*100);
+    if(bar)bar.style.width=endPct+"%";if(pct)pct.textContent=endPct+"%";
+    await new Promise(r=>setTimeout(r,160));
+  }
+  applyPreflightRestrictions();
+}
+function motorCommandsAllowed(){
+  return preflightComplete&&preflightMode!=="locked";
+}
+function autopilotAllowed(){
+  return preflightComplete&&preflightMode==="ready";
+}
 function steeringErrorDegrees(){
   return Math.abs(normalize180(state.steer-state.actualSteer));
 }
@@ -185,11 +252,11 @@ function render(){
 
   const connection=by("connectionStatus");
   if(connection){
-    connection.textContent=state.steeringFault?"STEERING FAULT":state.signalLost?"NO SIGNAL":"SIMULATOR CONNECTED";
+    connection.textContent=!preflightComplete?"PREFLIGHT":preflightMode==="locked"?"MOTOR LOCKED":preflightMode==="manualOnly"?"MANUAL ONLY":state.steeringFault?"STEERING FAULT":state.signalLost?"NO SIGNAL":"SIMULATOR CONNECTED";
     connection.classList.toggle("noSignalStatus",state.signalLost);
   }
 
-  const steeringLocked=navigating||state.zigTroll||state.anchor||state.signalLost||state.steeringFault;
+  const steeringLocked=!motorCommandsAllowed()||navigating||state.zigTroll||state.anchor||state.signalLost||state.steeringFault;
   const leftBtn=by("left"),rightBtn=by("right");
   if(leftBtn)leftBtn.disabled=steeringLocked;
   if(rightBtn)rightBtn.disabled=steeringLocked;
@@ -200,12 +267,13 @@ function render(){
     const waypointLocked=navigating&&(id==="forward"||id==="reverse"||id==="speed"||id==="cruise"||id==="anchor"||id==="hold"||id==="zig");
     const zigLocked=state.zigTroll&&(id==="forward"||id==="reverse"||id==="cruise"||id==="anchor"||id==="hold");
     const spotLocked=state.anchor&&(id==="forward"||id==="reverse"||id==="speed"||id==="cruise"||id==="hold"||id==="zig");
-    const locked=state.signalLost||state.steeringFault||waypointLocked||zigLocked||spotLocked;
+    const preflightLocked=!motorCommandsAllowed()||(preflightMode==="manualOnly"&&(id==="cruise"||id==="anchor"||id==="hold"||id==="zig"));
+    const locked=state.signalLost||state.steeringFault||preflightLocked||waypointLocked||zigLocked||spotLocked;
     el.disabled=locked;
     el.classList.toggle("motorLocked",locked);
   });
   const goBtn=by("goTo");
-  if(goBtn&&state.signalLost){goBtn.disabled=true;goBtn.classList.add("motorLocked")}
+  if(goBtn&&(state.signalLost||!autopilotAllowed())){goBtn.disabled=true;goBtn.classList.add("motorLocked")}
   const simBtn=by("simulateSignal");
   if(simBtn){
     simBtn.textContent=state.signalLost?"RESTORE SIGNAL":"SIMULATE SIGNAL LOSS";
@@ -240,7 +308,7 @@ function page(id){
 }
 
 function setSteer(v){
-  if(navigating||state.zigTroll||state.anchor||state.signalLost)return;
+  if(!motorCommandsAllowed()||navigating||state.zigTroll||state.anchor||state.signalLost)return;
   state.steer=clampManualSteer(v);
   state.desiredHeading=normalize360(state.currentHeading+state.steer);
   render();
@@ -250,7 +318,7 @@ on(by("left"),"click",()=>setSteer(state.steer-settings.steerStep));
 on(by("right"),"click",()=>setSteer(state.steer+settings.steerStep));
 
 function dial(e){
-  if(navigating||state.zigTroll||state.anchor||state.signalLost||!ring||helmBoundaryLocked)return;
+  if(!motorCommandsAllowed()||navigating||state.zigTroll||state.anchor||state.signalLost||!ring||helmBoundaryLocked)return;
   const r=ring.getBoundingClientRect();
   const x=e.clientX-(r.left+r.width/2);
   const y=e.clientY-(r.top+r.height/2);
@@ -271,7 +339,7 @@ function dial(e){
 let helmSteerPointer=null;
 let helmBoundaryLocked=false;
 function beginHelmSteer(e){
-  if(navigating||state.zigTroll||state.anchor||state.signalLost)return;
+  if(!motorCommandsAllowed()||navigating||state.zigTroll||state.anchor||state.signalLost)return;
   if(e.target.closest&&e.target.closest("button"))return;
   helmBoundaryLocked=false;
   helmSteerPointer=e.pointerId;
@@ -294,7 +362,7 @@ on(helm,"pointerup",endHelmSteer);
 on(helm,"pointercancel",endHelmSteer);
 
 async function changeDirection(targetDir){
-  if(state.signalLost||state.transition)return;
+  if(!motorCommandsAllowed()||state.signalLost||state.transition)return;
 
   // Same direction: each tap simply adds the configured throttle step.
   if(state.dir===targetDir){
@@ -355,7 +423,7 @@ function reverse(){changeDirection(-1)}
 on(by("forward"),"click",forward);
 on(by("reverse"),"click",reverse);
 on(by("speed"),"input",e=>{
-  if(state.signalLost||state.anchor)return;
+  if(!motorCommandsAllowed()||state.signalLost||state.anchor)return;
   motionToken++;
   state.transition=false;state.transitionTarget=0;
   state.speed=Math.max(0,Math.min(100,Number(e.target.value)||0));
@@ -386,7 +454,7 @@ function cancelZigTroll(allowResume=false){
   render();
 }
 function startZigTroll(){
-  if(state.signalLost||state.steeringFault||state.zigTroll)return;
+  if(!autopilotAllowed()||state.signalLost||state.steeringFault||state.zigTroll)return;
   clearResume();
   if(navigating)cancelAutopilot();
   if(spotTimer){clearInterval(spotTimer);spotTimer=null}
@@ -473,7 +541,7 @@ function startSpotSimulation(){
   },700);
 }
 function startSpotLock(){
-  if(state.signalLost||state.steeringFault||navigating||state.zigTroll)return;
+  if(!autopilotAllowed()||state.signalLost||state.steeringFault||navigating||state.zigTroll)return;
   clearResume();
   motionToken++;
   autoSteerToken++;
@@ -494,8 +562,8 @@ function stopSpotLock(){
   render();
 }
 on(by("anchor"),"click",()=>state.anchor?stopSpotLock():startSpotLock());
-on(by("hold"),"click",()=>{if(state.signalLost||navigating||state.zigTroll)return;state.hold=!state.hold;render()});
-on(by("cruise"),"click",()=>{if(state.signalLost||state.zigTroll)return;state.cruise=!state.cruise;if(state.cruise)state.anchor=false;render()});
+on(by("hold"),"click",()=>{if(!autopilotAllowed()||state.signalLost||navigating||state.zigTroll)return;state.hold=!state.hold;render()});
+on(by("cruise"),"click",()=>{if(!autopilotAllowed()||state.signalLost||state.zigTroll)return;state.cruise=!state.cruise;if(state.cruise)state.anchor=false;render()});
 qa(".accuracyBtns button").forEach(b=>on(b,"click",()=>{state.spotAccuracy=b.dataset.accuracy||"medium";render();}));
 on(by("exitSpotLock"),"click",stopSpotLock);
 on(by("zig"),"click",()=>state.zigTroll?cancelZigTroll():startZigTroll());
@@ -573,7 +641,7 @@ function cancelAutopilot(allowResume=false){
 }
 
 function engageAutopilot(remainingOverride=null){
-  if(state.signalLost||state.steeringFault||!selectedWaypointEl)return;
+  if(!autopilotAllowed()||state.signalLost||state.steeringFault||!selectedWaypointEl)return;
   if(remainingOverride===null)clearResume();
   if(state.zigTroll)cancelZigTroll();
   const name=selectedWaypointEl.dataset.wp;
@@ -674,6 +742,9 @@ on(by("resumeAuto"),"click",()=>{
     },100);
     render();
   }
+});
+on(by("preflightContinue"),"click",()=>{
+  const ov=by("preflightOverlay");if(ov)ov.classList.add("hidden");
 });
 on(window,"resize",()=>requestAnimationFrame(drawRoute));
 
@@ -969,5 +1040,7 @@ syncSettingsUI();
 window.addEventListener("error",e=>console.error("TROLL runtime error",e.error||e.message));
 window.addEventListener("unhandledrejection",e=>console.error("TROLL promise error",e.reason));
 
+renderPreflightRows();
 render();
+runPreflight();
 })();
