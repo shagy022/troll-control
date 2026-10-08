@@ -11,13 +11,16 @@ let zigTimer=null;
 let zigLeg="diag";
 let zigFeet=0;
 let zigBaseHeading=0;
+let spotTimer=null;
+let spotDx=0;
+let spotDy=0;
 const settings={throttleStep:10,gotoRadius:500,reverseSeconds:5,steerStep:10,signalLossSeconds:5,autoSteerSeconds:5,motorHomeOffset:0,theme:"dark"};
 try{Object.assign(settings,JSON.parse(localStorage.getItem("trollSettings")||"{}"))}catch(_){} const allowedThemes=["dark","classic","gunmetal","deepsea","nightvision","highvis"];if(!allowedThemes.includes(settings.theme))settings.theme="dark";
 function saveSettings(){try{localStorage.setItem("trollSettings",JSON.stringify(settings))}catch(_){}}
 
 const state={
   speed:0, dir:0, currentHeading:287, desiredHeading:287, steer:0,
-  anchor:false, hold:false, cruise:false, zigTroll:false, transition:false, transitionTarget:0, signalLost:false
+  anchor:false, hold:false, cruise:false, zigTroll:false, spotAccuracy:"medium", transition:false, transitionTarget:0, signalLost:false
 };
 
 function safeText(id,value){const el=by(id);if(el)el.textContent=value}
@@ -91,6 +94,13 @@ function render(){
   safeText("heading",Math.round(normalize360(state.currentHeading))+"°");
 
   safeClass("anchor","on",state.anchor);
+  const helmWrap=q(".helmWrap");
+  const spotPanel=by("spotLockPanel");
+  const directionEl=by("direction");
+  if(helmWrap)helmWrap.classList.toggle("hidden",state.anchor);
+  if(spotPanel)spotPanel.classList.toggle("hidden",!state.anchor);
+  if(directionEl)directionEl.classList.toggle("hidden",state.anchor);
+  qa(".accuracyBtns button").forEach(b=>b.classList.toggle("active",b.dataset.accuracy===state.spotAccuracy));
   safeClass("hold","on",state.hold);
   safeClass("cruise","on",state.cruise);
   safeClass("zig","on",state.zigTroll);
@@ -112,7 +122,7 @@ function render(){
     connection.classList.toggle("noSignalStatus",state.signalLost);
   }
 
-  const steeringLocked=navigating||state.zigTroll||state.signalLost;
+  const steeringLocked=navigating||state.zigTroll||state.anchor||state.signalLost;
   const leftBtn=by("left"),rightBtn=by("right");
   if(leftBtn)leftBtn.disabled=steeringLocked;
   if(rightBtn)rightBtn.disabled=steeringLocked;
@@ -122,7 +132,8 @@ function render(){
     const el=by(id); if(!el)return;
     const waypointLocked=navigating&&(id==="anchor"||id==="hold"||id==="zig");
     const zigLocked=state.zigTroll&&(id==="forward"||id==="reverse"||id==="cruise"||id==="anchor"||id==="hold");
-    const locked=state.signalLost||waypointLocked||zigLocked;
+    const spotLocked=state.anchor&&(id==="forward"||id==="reverse"||id==="speed"||id==="cruise"||id==="hold"||id==="zig");
+    const locked=state.signalLost||waypointLocked||zigLocked||spotLocked;
     el.disabled=locked;
     el.classList.toggle("motorLocked",locked);
   });
@@ -161,7 +172,7 @@ function page(id){
 }
 
 function setSteer(v){
-  if(navigating||state.zigTroll||state.signalLost)return;
+  if(navigating||state.zigTroll||state.anchor||state.signalLost)return;
   state.steer=clampManualSteer(v);
   state.desiredHeading=normalize360(state.currentHeading+state.steer);
   render();
@@ -171,7 +182,7 @@ on(by("left"),"click",()=>setSteer(state.steer-settings.steerStep));
 on(by("right"),"click",()=>setSteer(state.steer+settings.steerStep));
 
 function dial(e){
-  if(navigating||state.zigTroll||state.signalLost||!ring)return;
+  if(navigating||state.zigTroll||state.anchor||state.signalLost||!ring)return;
   const r=ring.getBoundingClientRect();
   const x=e.clientX-(r.left+r.width/2);
   const y=e.clientY-(r.top+r.height/2);
@@ -179,7 +190,7 @@ function dial(e){
 }
 let helmSteerPointer=null;
 function beginHelmSteer(e){
-  if(navigating||state.signalLost)return;
+  if(navigating||state.zigTroll||state.anchor||state.signalLost)return;
   if(e.target.closest&&e.target.closest("button"))return;
   helmSteerPointer=e.pointerId;
   try{helm.setPointerCapture(e.pointerId)}catch(_){}
@@ -263,7 +274,7 @@ function reverse(){changeDirection(-1)}
 on(by("forward"),"click",forward);
 on(by("reverse"),"click",reverse);
 on(by("speed"),"input",e=>{
-  if(state.signalLost)return;
+  if(state.signalLost||state.anchor)return;
   motionToken++;
   state.transition=false;state.transitionTarget=0;
   state.speed=Math.max(0,Math.min(100,Number(e.target.value)||0));
@@ -293,6 +304,7 @@ function cancelZigTroll(){
 function startZigTroll(){
   if(state.signalLost||state.zigTroll)return;
   if(navigating)cancelAutopilot();
+  if(spotTimer){clearInterval(spotTimer);spotTimer=null}
   state.anchor=false;
   state.hold=false;
   state.cruise=false;
@@ -319,11 +331,64 @@ function startZigTroll(){
     }
   },100);
 }
-on(by("anchor"),"click",()=>{if(state.signalLost||navigating||state.zigTroll)return;state.anchor=!state.anchor;if(state.anchor)state.cruise=false;render()});
+
+function updateSpotDisplay(){
+  const dot=by("spotBoatDot"),field=by("spotField");
+  if(!dot||!field)return;
+  const radius=field.clientWidth*.44;
+  const scale=radius/10;
+  const x=field.clientWidth/2+spotDx*scale;
+  const y=field.clientHeight/2-spotDy*scale;
+  dot.style.left=x+"px";
+  dot.style.top=y+"px";
+  safeText("spotDistance",Math.hypot(spotDx,spotDy).toFixed(1)+" ft");
+}
+function startSpotSimulation(){
+  if(spotTimer)clearInterval(spotTimer);
+  spotDx=1.2;spotDy=-.8;
+  updateSpotDisplay();
+  spotTimer=setInterval(()=>{
+    if(!state.anchor||state.signalLost)return;
+    const limit=state.spotAccuracy==="high"?3:state.spotAccuracy==="medium"?6:10;
+    const d=Math.hypot(spotDx,spotDy);
+    const correction=d>0?Math.min(.7,d*.22):0;
+    spotDx+=(Math.random()-.5)*1.4-(spotDx/(d||1))*correction;
+    spotDy+=(Math.random()-.5)*1.4-(spotDy/(d||1))*correction;
+    const nd=Math.hypot(spotDx,spotDy);
+    if(nd>limit*.92){
+      const f=(limit*.86)/nd;
+      spotDx*=f;spotDy*=f;
+    }
+    updateSpotDisplay();
+  },700);
+}
+function startSpotLock(){
+  if(state.signalLost||navigating||state.zigTroll)return;
+  motionToken++;
+  autoSteerToken++;
+  state.anchor=true;
+  state.hold=false;
+  state.cruise=false;
+  state.speed=0;
+  state.dir=0;
+  startSpotSimulation();
+  render();
+}
+function stopSpotLock(){
+  if(spotTimer){clearInterval(spotTimer);spotTimer=null}
+  state.anchor=false;
+  spotDx=0;spotDy=0;
+  state.speed=0;
+  state.dir=0;
+  render();
+}
+on(by("anchor"),"click",()=>state.anchor?stopSpotLock():startSpotLock());
 on(by("hold"),"click",()=>{if(state.signalLost||navigating||state.zigTroll)return;state.hold=!state.hold;render()});
 on(by("cruise"),"click",()=>{if(state.signalLost||state.zigTroll)return;state.cruise=!state.cruise;if(state.cruise)state.anchor=false;render()});
+qa(".accuracyBtns button").forEach(b=>on(b,"click",()=>{state.spotAccuracy=b.dataset.accuracy||"medium";render();}));
+on(by("exitSpotLock"),"click",stopSpotLock);
 on(by("zig"),"click",()=>state.zigTroll?cancelZigTroll():startZigTroll());
-on(by("stop"),"click",()=>{autoSteerToken++;if(state.zigTroll)cancelZigTroll();motionToken++;if(zigTimer){clearInterval(zigTimer);zigTimer=null} state.zigTroll=false;zigFeet=0;zigLeg="diag"; state.speed=0;state.dir=0;state.anchor=false;state.hold=false;state.cruise=false;state.transition=false;state.transitionTarget=0;if(navigating){navigating=false;activeWaypointName="";const route=by("routeSvg");if(route)route.classList.remove("on");const go=by("goTo");if(go){go.textContent="GO TO";go.classList.remove("navigating")}}render()});
+on(by("stop"),"click",()=>{if(spotTimer){clearInterval(spotTimer);spotTimer=null}autoSteerToken++;if(state.zigTroll)cancelZigTroll();motionToken++;if(zigTimer){clearInterval(zigTimer);zigTimer=null} state.zigTroll=false;zigFeet=0;zigLeg="diag"; if(spotTimer){clearInterval(spotTimer);spotTimer=null} state.speed=0;state.dir=0;state.anchor=false;state.hold=false;state.cruise=false;state.transition=false;state.transitionTarget=0;if(navigating){navigating=false;activeWaypointName="";const route=by("routeSvg");if(route)route.classList.remove("on");const go=by("goTo");if(go){go.textContent="GO TO";go.classList.remove("navigating")}}render()});
 
 const wpData={
   "Rock Pile":{coords:"30.12345, -83.45678",distance:286,bearing:"042°"},
