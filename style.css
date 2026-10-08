@@ -205,3 +205,21 @@ body[data-theme="highvis"] .ampDraw b{color:#63e28f}
 .helm{width:min(62.93vw,257px)!important;transform:translateX(-3px)!important;touch-action:none}
 .steerKnob{width:28px!important;height:28px!important}
 @media(max-width:380px){.helm{width:220px!important}}
+
+/* v0.18 control alignment + 2x2 autopilot modes */
+.direction{
+  display:block;
+  width:min(62.93vw,257px);
+  margin:0 auto 12px!important;
+  transform:translateX(-30px);
+}
+.modes{
+  display:grid!important;
+  grid-template-columns:1fr 1fr!important;
+  gap:9px!important;
+}
+.modes button{height:74px!important}
+#zig.on{border-color:var(--cyan);box-shadow:0 0 18px #0bc8ff55;color:var(--cyan)}
+@media(max-width:380px){
+  .direction{width:220px;transform:translateX(-28px)}
+}
