@@ -231,3 +231,29 @@ body[data-theme="highvis"] .ampDraw b{color:#63e28f}
   letter-spacing:1px!important;
 }
 #zig span{white-space:nowrap}
+
+/* v0.20 Spot Lock screen */
+.spotLockPanel{margin:24px 0 12px;text-align:center}
+.spotLockHead{display:flex;align-items:center;justify-content:space-between;gap:10px;margin-bottom:12px}
+.spotLockHead>div{text-align:left}.spotLockHead small,.spotLockHead b{display:block}
+.spotLockHead small{font-size:9px;color:var(--muted);font-weight:800;letter-spacing:1px}
+.spotLockHead b{font-size:16px;color:var(--green);margin-top:2px}
+#exitSpotLock{border:1px solid var(--red);background:#351112;color:var(--red);border-radius:10px;padding:10px 12px;font-weight:900;font-size:10px}
+.spotField{width:min(78vw,320px);aspect-ratio:1;margin:8px auto 10px;position:relative;border-radius:50%;background:radial-gradient(circle,#0b171d 0,#071116 68%,#041015 100%);border:1px solid var(--line);overflow:hidden}
+.spotRing{position:absolute;left:50%;top:50%;transform:translate(-50%,-50%);border-radius:50%;pointer-events:none}
+.spotRing span{position:absolute;right:4px;top:50%;transform:translateY(-50%);font-size:8px;font-weight:900;background:var(--bg);padding:1px 3px;border-radius:5px}
+.ring10{width:88%;height:88%;border:2px solid #ff443d99}.ring10 span{color:var(--red)}
+.ring6{width:53%;height:53%;border:2px solid #ffd33d99}.ring6 span{color:#ffd33d}
+.ring3{width:27%;height:27%;border:2px solid #00f58a99}.ring3 span{color:var(--green)}
+.spotX{position:absolute;left:50%;top:50%;transform:translate(-50%,-54%);font-size:46px;font-weight:300;color:#fff;line-height:1;text-shadow:0 0 14px #ffffff99}
+.spotBoatDot{position:absolute;left:50%;top:50%;width:15px;height:15px;border-radius:50%;background:var(--cyan);border:2px solid #fff;box-shadow:0 0 12px var(--cyan);transform:translate(-50%,-50%);transition:left .45s linear,top .45s linear}
+.spotDistance small,.spotDistance b{display:block}.spotDistance small{font-size:9px;color:var(--muted);font-weight:800;letter-spacing:.7px}.spotDistance b{font-size:26px;margin-top:2px}
+.accuracyBtns{display:grid;grid-template-columns:repeat(3,1fr);gap:8px;margin-top:12px}
+.accuracyBtns button{min-height:54px;border-radius:12px;border:1px solid var(--line);background:linear-gradient(#0e1c23,#09151a);color:var(--text);font-weight:900;font-size:11px}
+.accuracyBtns button span{display:block;font-size:9px;color:var(--muted);margin-top:4px}
+.accuracyBtns button.active{border-color:var(--green);box-shadow:0 0 14px #00f58a44;color:var(--green)}
+.spotNote{font-size:10px;line-height:1.45;color:var(--text);margin:10px 4px 0}.spotNote.muted{color:var(--muted);margin-top:5px}
+body[data-theme="classic"] .spotField{background:radial-gradient(circle,#fff 0,#f3f7f8 68%,#eaf0f2 100%)}
+body[data-theme="classic"] .spotX{color:#172027;text-shadow:none}
+body[data-theme="classic"] .accuracyBtns button{background:#fff;color:#172027}
+body[data-theme="gunmetal"] .spotField{background:radial-gradient(circle,#3c4247 0,#2e3337 68%,#25292c 100%)}
