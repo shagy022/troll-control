@@ -186,3 +186,6 @@ body[data-theme="gunmetal"] .ampDraw b{color:#66dba4}
 body[data-theme="deepsea"] .ampDraw b{color:#12d99b}
 body[data-theme="nightvision"] .ampDraw b{color:#54ff8b}
 body[data-theme="highvis"] .ampDraw b{color:#63e28f}
+
+/* v0.17.1 helm horizontal position */
+.helm{transform:translateX(12px)}
