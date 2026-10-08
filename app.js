@@ -29,12 +29,13 @@ const preflightChecks=[
   {id:"gpsFix",label:"GPS Fix",detail:"Required for Spot Lock and autonomous navigation",safety:false,pass:true},
   {id:"compass",label:"Compass / Heading",detail:"Required for heading-based autopilot modes",safety:false,pass:true}
 ];
-const settings={throttleStep:10,gotoRadius:500,gotoMaxThrottle:60,gotoSlowdownDistance:25,reverseSeconds:5,steerStep:10,steeringFaultTolerance:15,signalLossSeconds:5,autoSteerSeconds:5,motorHomeOffset:0,theme:"dark"};
+const settings={throttleStep:10,gotoRadius:500,gotoMaxThrottle:75,gotoSlowdownDistance:25,reverseSeconds:5,steerStep:10,steeringFaultTolerance:15,signalLossSeconds:5,autoSteerSeconds:5,motorHomeOffset:0,theme:"dark"};
 try{Object.assign(settings,JSON.parse(localStorage.getItem("trollSettings")||"{}"))}catch(_){} const allowedThemes=["dark","classic","gunmetal","deepsea","nightvision","highvis"];if(!allowedThemes.includes(settings.theme))settings.theme="dark";
+if(![50,75,100].includes(Number(settings.gotoMaxThrottle)))settings.gotoMaxThrottle=75;
 function saveSettings(){try{localStorage.setItem("trollSettings",JSON.stringify(settings))}catch(_){}}
 
 const state={
-  speed:0, dir:0, currentHeading:287, desiredHeading:287, steer:0, actualSteer:0, steeringFault:false,
+  speed:0, dir:0, currentHeading:287, desiredHeading:287, courseOverGround:287, steer:0, actualSteer:0, steeringFault:false,
   anchor:false, hold:false, cruise:false, zigTroll:false, spotAccuracy:"medium", transition:false, transitionTarget:0, signalLost:false
 };
 
@@ -290,6 +291,8 @@ function render(){
   }
   if(desiredArrow)desiredArrow.style.transform="translate(-50%,-50%) rotate("+visualSteer+"deg)";
 
+  const mapBoat=q(".mapBoat");
+  if(mapBoat)mapBoat.style.transform="rotate("+normalize360(state.courseOverGround)+"deg)";
   const amps=state.speed*0.52;
   safeText("amps",amps.toFixed(1)+" A");
   safeText("liveAmps",amps.toFixed(1)+" A");
@@ -649,11 +652,13 @@ function engageAutopilot(remainingOverride=null){
   if(!w||w.distance>settings.gotoRadius)return;
   navigating=true;
   activeWaypointName=name;
+  page("controlPage");
   state.hold=false;
   state.cruise=false;
   // In the simulator, point the commanded motor direction toward the waypoint bearing.
   const targetBearing=parseFloat(w.bearing);
   if(Number.isFinite(targetBearing)){
+    state.courseOverGround=normalize360(targetBearing);
     smoothAutoSteer(normalize180(targetBearing-state.currentHeading),settings.autoSteerSeconds);
   }
   const go=by("goTo"); if(go){go.textContent="NAVIGATING…";go.classList.add("navigating")}
@@ -908,7 +913,7 @@ qa(".unit").forEach(b=>on(b,"click",()=>{
 }));
 on(by("throttleStep"),"change",e=>{settings.throttleStep=Math.max(5,Math.min(20,Number(e.target.value)||10));saveSettings()});
 on(by("gotoRadius"),"change",e=>{settings.gotoRadius=Math.max(5,Math.min(1000,Number(e.target.value)||500));e.target.value=settings.gotoRadius;saveSettings()});
-on(by("gotoMaxThrottle"),"change",e=>{settings.gotoMaxThrottle=Math.max(20,Math.min(80,Number(e.target.value)||60));e.target.value=settings.gotoMaxThrottle;saveSettings()});
+on(by("gotoMaxThrottle"),"change",e=>{const v=Number(e.target.value);settings.gotoMaxThrottle=[50,75,100].includes(v)?v:75;e.target.value=settings.gotoMaxThrottle;saveSettings()});
 on(by("gotoSlowdownDistance"),"change",e=>{settings.gotoSlowdownDistance=Math.max(10,Math.min(100,Number(e.target.value)||25));e.target.value=settings.gotoSlowdownDistance;saveSettings()});
 on(by("reverseSeconds"),"change",e=>{settings.reverseSeconds=Math.max(2,Math.min(10,Number(e.target.value)||5));e.target.value=settings.reverseSeconds;saveSettings()});
 on(by("steerStep"),"change",e=>{settings.steerStep=Math.max(5,Math.min(20,Number(e.target.value)||10));saveSettings()});
@@ -938,8 +943,8 @@ const settingHelp=[
   },
   {
     match:a=>a.querySelector("#gotoMaxThrottle"),
-    title:"Go-To Max Throttle",
-    text:"Caps propulsion power during automatic waypoint navigation. Allowed range: 20–80% in 5% steps. Lower values save battery and reduce speed; higher values get to the waypoint faster. Go-To will never intentionally exceed this cap."
+    title:"Auto Navigate Throttle",
+    text:"Sets the cruise throttle used during automatic waypoint navigation. Choices are 50%, 75%, or 100%, with 75% as the default. Use 50% for calmer conditions and battery savings, 75% for normal use, and 100% when stronger wind, current, or heavier seas require more authority. Approach slowdown still reduces power near the waypoint."
   },
   {
     match:a=>a.querySelector("#gotoSlowdownDistance"),
@@ -1028,7 +1033,6 @@ function enforceNumberRange(id,min,max,step,fallback){
   });
 }
 enforceNumberRange("gotoRadius",5,1000,5,500);
-enforceNumberRange("gotoMaxThrottle",20,80,5,60);
 enforceNumberRange("gotoSlowdownDistance",10,100,5,25);
 enforceNumberRange("reverseSeconds",2,10,1,5);
 enforceNumberRange("autoSteerSeconds",2,15,1,5);
