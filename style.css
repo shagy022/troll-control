@@ -283,3 +283,22 @@ body[data-theme="gunmetal"] .spotField{background:radial-gradient(circle,#3c4247
 .settingInfoBtn:active{transform:scale(.94)}
 .settingRangeNote{display:block;margin-top:7px;font-size:9px;color:var(--muted)}
 body[data-theme="classic"] .settingInfoBtn{background:#f3f5f6;color:#006fa3}
+
+/* v0.22.4 waypoint navigation status */
+.direction.navWaypointStatus{
+  white-space:normal!important;
+  line-height:1.15!important;
+  letter-spacing:.8px!important;
+  font-size:10px!important;
+}
+.direction.navWaypointStatus .navMain{
+  display:block;
+  font-weight:900;
+}
+.direction.navWaypointStatus .navDistance{
+  display:block;
+  margin-top:4px;
+  font-size:11px;
+  letter-spacing:.4px;
+  color:var(--text);
+}
