@@ -355,3 +355,54 @@ body[data-theme="classic"] .settingInfoBtn{background:#f3f5f6;color:#006fa3}
   transform-origin:50% 50%;
   transition:transform .35s linear;
 }
+
+/* v0.26.0 phase 2 waypoint system */
+.waypointQuickAdd{display:grid;grid-template-columns:repeat(2,1fr);gap:8px;margin:10px 0 14px}
+.waypointQuickAdd button{height:54px;border:1px solid var(--line);border-radius:12px;background:linear-gradient(#0e1c23,#09151a);color:var(--text);font-size:18px;font-weight:900}
+.waypointQuickAdd button span{display:block;font-size:8px;margin-top:3px;letter-spacing:.5px}
+.waypointQuickAdd [data-add-type="fish"]{border-color:#00c86d;color:#4dff9d}
+.waypointQuickAdd [data-add-type="structure"]{border-color:#b68a55;color:#d9ae75}
+.waypointQuickAdd [data-add-type="hazard"]{border-color:var(--red);color:#ff6862}
+.waypointList{display:grid;gap:9px}
+.waypointListCard{border:1px solid var(--line);border-left:5px solid var(--cyan);border-radius:13px;background:linear-gradient(#0e1c23,#09151a);padding:11px}
+.waypointListCard.fish{border-left-color:#00d77b;background:linear-gradient(90deg,#06301f,#09151a 45%)}
+.waypointListCard.structure{border-left-color:#b78b55;background:linear-gradient(90deg,#302415,#09151a 45%)}
+.waypointListCard.hazard{border-left-color:var(--red);background:linear-gradient(90deg,#351313,#09151a 45%)}
+.waypointListCard .wpListHead{display:flex;align-items:flex-start;justify-content:space-between;gap:8px}
+.waypointListCard .wpIcon{font-size:22px}
+.waypointListCard h3{margin:0;font-size:15px}
+.waypointListCard small{color:var(--muted);font-size:9px}
+.waypointListCard p{font-size:10px;color:#bed0d6;line-height:1.35;margin:7px 0}
+.waypointListActions{display:grid;grid-template-columns:1.2fr 1fr 1fr;gap:6px;margin-top:8px}
+.waypointListActions button{height:34px;border-radius:9px;border:1px solid var(--line);background:#0b2028;color:white;font-size:9px;font-weight:900}
+.waypointListActions .goSaved{border-color:var(--cyan);color:var(--cyan)}
+.waypointListActions .deleteSaved{border-color:#68302f;color:#ff746f}
+.waypointEditorCard{width:min(430px,100%);max-height:92dvh;overflow:auto;background:linear-gradient(#0d1a20,#081116);border:1px solid var(--line);border-radius:20px;padding:18px;box-shadow:0 18px 70px #000}
+.waypointEditorHead{display:flex;justify-content:space-between;align-items:flex-start}
+.waypointEditorHead small{font-size:9px;color:var(--cyan);font-weight:900;letter-spacing:1px}
+.waypointEditorHead h3{margin:3px 0 12px}
+.waypointEditorHead button{background:none;border:0;color:white;font-size:28px}
+.waypointEditorCard label{display:block;font-size:9px;font-weight:900;color:var(--muted);margin:9px 0}
+.waypointEditorCard input,.waypointEditorCard textarea{width:100%;margin-top:5px;background:#061015;border:1px solid var(--line);border-radius:10px;color:white;padding:10px;font:inherit}
+.waypointEditorCard textarea{resize:vertical}
+#waypointDescCount,#waypointPhotoCount{float:right}
+.waypointPhotoPreview{display:grid;grid-template-columns:repeat(5,1fr);gap:5px;min-height:0}
+.waypointPhotoPreview img{width:100%;aspect-ratio:1;object-fit:cover;border-radius:7px;border:1px solid var(--line)}
+.waypointEditorActions{display:grid;grid-template-columns:1fr 1.4fr;gap:8px;margin-top:12px}
+.waypointEditorActions button{height:43px;border-radius:11px;font-weight:900}
+#cancelWaypointSave{background:#101a1f;color:white;border:1px solid var(--line)}
+#saveWaypoint{background:#07303b;color:var(--cyan);border:1px solid var(--cyan)}
+.savedMapMarker{position:absolute;z-index:4;width:34px;height:34px;border-radius:50%;border:2px solid currentColor;background:#061015dd;display:grid;place-items:center;font-size:17px;font-weight:900;transform:translate(-50%,-50%);box-shadow:0 0 12px #0008}
+.savedMapMarker.fish{color:#27f28b}
+.savedMapMarker.structure{color:#d0a263}
+.savedMapMarker.hazard{color:#ff514b}
+.savedMapMarker.ramp{color:#48b9ff}
+.savedMapMarker.anchor{color:#d8f4ff}
+.savedMapMarker.grass{color:#8dbd59}
+.savedMapMarker.channel{color:#5ccfff}
+.savedMapMarker.bait{color:#ffd85a}
+.savedMapMarker.dock{color:#bd8d62}
+.savedMapMarker.waypoint{color:var(--cyan)}
+.waypointCardType{font-size:9px!important;font-weight:900!important;letter-spacing:1px;color:var(--cyan)!important}
+.waypointCardPhotos{display:flex;gap:5px;overflow-x:auto;margin:7px 0}
+.waypointCardPhotos img{width:52px;height:52px;object-fit:cover;border-radius:7px;border:1px solid var(--line)}
