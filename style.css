@@ -30,3 +30,14 @@
 .helm.autopilotSteering .steerKnob{opacity:.28;box-shadow:none!important;pointer-events:none!important}
 .helm.autopilotSteering .headingMarker{color:#ffd33d;text-shadow:0 0 9px #ffd33d}
 @media (prefers-reduced-motion:reduce){.direction.autopilotExit{animation:none}}
+
+/* v0.13 steering marker + signal-loss state */
+.steerKnob,.headingMarker{margin:0!important;transform:translate(-50%,-50%)}
+.direction.noSignal{color:var(--red)!important;font-size:18px!important;font-weight:1000!important;animation:dangerBlink .9s steps(1,end) infinite;text-shadow:0 0 11px var(--red)}
+@keyframes dangerBlink{0%,52%{opacity:1}53%,100%{opacity:.25}}
+header span.noSignalStatus{color:var(--red)!important;animation:dangerBlink .9s steps(1,end) infinite}
+.motorLocked{opacity:.28!important;filter:grayscale(.65);cursor:not-allowed!important}
+.signalTest{width:100%;min-height:46px;margin-top:10px;border-radius:10px;border:1px solid var(--red);background:#351012;color:var(--red);font-weight:900}
+.signalTest.restore{border-color:var(--green);background:#073225;color:var(--green)}
+.settingHint{display:block;margin-top:8px;color:var(--muted);font-size:11px;line-height:1.35}
+@media (prefers-reduced-motion:reduce){.direction.noSignal,header span.noSignalStatus{animation:none}}
