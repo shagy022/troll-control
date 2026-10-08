@@ -41,3 +41,23 @@ header span.noSignalStatus{color:var(--red)!important;animation:dangerBlink .9s 
 .signalTest.restore{border-color:var(--green);background:#073225;color:var(--green)}
 .settingHint{display:block;margin-top:8px;color:var(--muted);font-size:11px;line-height:1.35}
 @media (prefers-reduced-motion:reduce){.direction.noSignal,header span.noSignalStatus{animation:none}}
+
+/* v0.14 steering calibration */
+.calibrateBtn{width:100%;min-height:46px;margin-top:10px;border-radius:10px;border:1px solid var(--cyan);background:#07303b;color:var(--cyan);font-weight:900}
+.calibrationCard{width:min(400px,100%);background:#0b171d;border:1px solid #31515e;border-radius:20px;padding:22px;box-shadow:0 15px 60px #000}
+.calibrationCard small{color:var(--cyan);font-weight:900;letter-spacing:1px}
+.calibrationCard h3{margin:8px 0 10px}
+.calibrationCard p{color:#b7c6cc;line-height:1.45}
+.calSafety{color:#ffd33d!important;font-weight:800}
+.calActions{display:grid;grid-template-columns:1fr 1.4fr;gap:10px;margin-top:18px}
+.calPrimary,.calSecondary{min-height:48px;border-radius:12px;font-weight:900}
+.calPrimary{border:1px solid var(--cyan);background:#07303b;color:var(--cyan)}
+.calSecondary{border:1px solid var(--line);background:#101e24;color:var(--text)}
+.calPrimary.full{width:100%;margin-top:18px}
+.calDial{width:150px;height:150px;margin:22px auto 10px;border:2px solid var(--line);border-radius:50%;position:relative;display:grid;place-items:center;background:#071116}
+#calNeedle{font-size:42px;color:var(--cyan);transform-origin:50% 50%;transition:transform .08s linear;text-shadow:0 0 12px var(--cyan)}
+#calAngle{display:block;text-align:center;font-size:26px;color:var(--cyan)}
+.calAdjust{display:grid;grid-template-columns:1fr 90px 1fr;align-items:center;gap:10px;margin:18px 0}
+.calAdjust button{min-height:52px;border-radius:12px;border:1px solid var(--line);background:#101e24;color:var(--text);font-weight:900}
+.calAdjust div{text-align:center}.calAdjust b,.calAdjust span{display:block}.calAdjust b{font-size:24px;color:var(--cyan)}.calAdjust span{font-size:9px;color:var(--muted);margin-top:4px}
+.calibrationLock{opacity:.3!important;pointer-events:none!important}
