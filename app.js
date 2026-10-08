@@ -30,12 +30,13 @@ function normalize360(v){return ((v%360)+360)%360}
 function clampManualSteer(v){
   const a=normalize180(v);
   if(state.dir<0){
-    // Reverse is restricted to the rear half: 3:00 through 6:00 to 9:00.
+    // Reverse manual steering: rear half only, 3:00 -> 6:00 -> 9:00.
     if(a>=90||a<=-90)return a;
-    return a>=0?90:-90;
+    return state.steer>=0?90:-90;
   }
-  // Forward/neutral manual steering is restricted to the front half: 9:00 to 3:00.
-  return Math.max(-90,Math.min(90,a));
+  // Forward/neutral manual steering: front half only, 9:00 -> 12:00 -> 3:00.
+  if(a>=-90&&a<=90)return a;
+  return state.steer>=0?90:-90;
 }
 let autoSteerToken=0;
 async function smoothAutoSteer(target,durationSeconds=settings.autoSteerSeconds){
@@ -99,7 +100,6 @@ function render(){
   const directionEl=by("direction");
   if(helmWrap)helmWrap.classList.toggle("hidden",state.anchor);
   if(spotPanel)spotPanel.classList.toggle("hidden",!state.anchor);
-  if(directionEl)directionEl.classList.toggle("hidden",state.anchor);
   qa(".accuracyBtns button").forEach(b=>b.classList.toggle("active",b.dataset.accuracy===state.spotAccuracy));
   safeClass("hold","on",state.hold);
   safeClass("cruise","on",state.cruise);
@@ -114,6 +114,13 @@ function render(){
     else if(navigating||state.zigTroll)dir.classList.add("autopilotExit");
     else if(state.dir>0)dir.classList.add("forwardDir");
     else if(state.dir<0)dir.classList.add("reverseDir");
+    dir.classList.toggle("hidden",state.anchor);
+  }
+  const controlPage=by("controlPage");
+  if(controlPage)controlPage.classList.toggle("spotLockActive",state.anchor);
+  if(helm){
+    helm.classList.toggle("forwardRange",!state.anchor&&state.dir>=0);
+    helm.classList.toggle("reverseRange",!state.anchor&&state.dir<0);
   }
 
   const connection=by("connectionStatus");
@@ -182,16 +189,30 @@ on(by("left"),"click",()=>setSteer(state.steer-settings.steerStep));
 on(by("right"),"click",()=>setSteer(state.steer+settings.steerStep));
 
 function dial(e){
-  if(navigating||state.zigTroll||state.anchor||state.signalLost||!ring)return;
+  if(navigating||state.zigTroll||state.anchor||state.signalLost||!ring||helmBoundaryLocked)return;
   const r=ring.getBoundingClientRect();
   const x=e.clientX-(r.left+r.width/2);
   const y=e.clientY-(r.top+r.height/2);
-  setSteer(Math.atan2(x,-y)*180/Math.PI);
+  const raw=Math.atan2(x,-y)*180/Math.PI;
+  const a=normalize180(raw);
+  const forbidden=state.dir<0 ? (a>-90&&a<90) : (a>90||a<-90);
+  if(forbidden){
+    // Stop this drag at the 3:00/9:00 safety boundary.
+    // Do not jump across to the opposite boundary during the same gesture.
+    state.steer=state.steer>=0?90:-90;
+    state.desiredHeading=normalize360(state.currentHeading+state.steer);
+    helmBoundaryLocked=true;
+    render();
+    return;
+  }
+  setSteer(a);
 }
 let helmSteerPointer=null;
+let helmBoundaryLocked=false;
 function beginHelmSteer(e){
   if(navigating||state.zigTroll||state.anchor||state.signalLost)return;
   if(e.target.closest&&e.target.closest("button"))return;
+  helmBoundaryLocked=false;
   helmSteerPointer=e.pointerId;
   try{helm.setPointerCapture(e.pointerId)}catch(_){}
   dial(e);
@@ -203,6 +224,7 @@ function moveHelmSteer(e){
 function endHelmSteer(e){
   if(helmSteerPointer!==e.pointerId)return;
   helmSteerPointer=null;
+  helmBoundaryLocked=false;
   try{helm.releasePointerCapture(e.pointerId)}catch(_){}
 }
 on(helm,"pointerdown",beginHelmSteer);
@@ -243,14 +265,12 @@ async function changeDirection(targetDir){
   if(token!==motionToken)return;
   state.speed=0;
 
-  // Mechanical reverse: flip the steering assembly 180 degrees before applying thrust.
-  // Neutral -> Forward keeps the current steering direction.
-  const needsFlip=(state.dir!==0&&state.dir!==targetDir)||(state.dir===0&&targetDir<0);
-  if(needsFlip){
-    state.steer=normalize180(state.steer+180);
-    state.steer=targetDir<0
-      ? (state.steer>=0?Math.max(90,state.steer):Math.min(-90,state.steer))
-      : Math.max(-90,Math.min(90,state.steer));
+  // Direction changes always center the motor before thrust resumes:
+  // Forward = 12:00 / 0°, Reverse = 6:00 / 180°.
+  const targetSteer=targetDir<0?180:0;
+  const needsCenter=Math.abs(normalize180(state.steer-targetSteer))>.5;
+  if(needsCenter){
+    state.steer=targetSteer;
     state.desiredHeading=normalize360(state.currentHeading+state.steer);
     render();
     await new Promise(r=>setTimeout(r,500));
