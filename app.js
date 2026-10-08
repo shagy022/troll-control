@@ -57,14 +57,20 @@ function render(){
   safeClass("hold","on",state.hold);
   safeClass("cruise","on",state.cruise);
 
-  const gear=state.transition?"REVERSING…":state.dir>0?"FORWARD":state.dir<0?"REVERSE":"NEUTRAL";
+  const gear=navigating?"EXIT AUTO PILOT":state.transition?"REVERSING…":state.dir>0?"FORWARD":state.dir<0?"REVERSE":"NEUTRAL";
   safeText("direction",gear);
   const dir=by("direction");
   if(dir){
     dir.className="direction";
-    if(state.dir>0)dir.classList.add("forwardDir");
-    if(state.dir<0)dir.classList.add("reverseDir");
+    if(navigating)dir.classList.add("autopilotExit");
+    else if(state.dir>0)dir.classList.add("forwardDir");
+    else if(state.dir<0)dir.classList.add("reverseDir");
   }
+  const leftBtn=by("left"),rightBtn=by("right"),centerBtn=by("center");
+  if(leftBtn)leftBtn.disabled=navigating;
+  if(rightBtn)rightBtn.disabled=navigating;
+  if(centerBtn)centerBtn.disabled=navigating;
+  if(helm)helm.classList.toggle("autopilotSteering",navigating);
 
   const lit=Math.round(state.speed/2.5);
   qa(".thrustDot").forEach((d,i)=>d.classList.toggle("on",i<lit));
@@ -91,6 +97,7 @@ function page(id){
 }
 
 function setSteer(v){
+  if(navigating)return;
   state.steer=normalize180(v);
   state.desiredHeading=normalize360(state.currentHeading+state.steer);
   render();
@@ -101,7 +108,7 @@ on(by("right"),"click",()=>setSteer(state.steer+settings.steerStep));
 on(by("center"),"click",()=>setSteer(0));
 
 function dial(e){
-  if(!ring)return;
+  if(navigating||!ring)return;
   const r=ring.getBoundingClientRect();
   const x=e.clientX-(r.left+r.width/2);
   const y=e.clientY-(r.top+r.height/2);
@@ -161,7 +168,7 @@ on(by("speed"),"input",e=>{
 on(by("anchor"),"click",()=>{state.anchor=!state.anchor;if(state.anchor)state.cruise=false;render()});
 on(by("hold"),"click",()=>{state.hold=!state.hold;render()});
 on(by("cruise"),"click",()=>{state.cruise=!state.cruise;if(state.cruise)state.anchor=false;render()});
-on(by("stop"),"click",()=>{motionToken++;state.speed=0;state.dir=0;state.anchor=false;state.cruise=false;state.transition=false;navigating=false;const route=by("routeSvg");if(route)route.classList.remove("on");const go=by("goTo");if(go){go.textContent="GO TO";go.classList.remove("navigating")}render()});
+on(by("stop"),"click",()=>{motionToken++;state.speed=0;state.dir=0;state.anchor=false;state.cruise=false;state.transition=false;if(navigating){navigating=false;activeWaypointName="";const route=by("routeSvg");if(route)route.classList.remove("on");const go=by("goTo");if(go){go.textContent="GO TO";go.classList.remove("navigating")}}render()});
 
 const wpData={
   "Rock Pile":{coords:"30.12345, -83.45678",distance:286,bearing:"042°"},
@@ -170,6 +177,39 @@ const wpData={
 };
 let selectedWaypointEl=null;
 let navigating=false;
+let activeWaypointName="";
+
+function cancelAutopilot(){
+  if(!navigating)return;
+  navigating=false;
+  activeWaypointName="";
+  motionToken++;
+  const route=by("routeSvg"); if(route)route.classList.remove("on");
+  const go=by("goTo"); if(go){go.textContent="GO TO";go.classList.remove("navigating")}
+  safeText("goNote","Auto pilot cancelled");
+  render();
+}
+
+function engageAutopilot(){
+  if(!selectedWaypointEl)return;
+  const name=selectedWaypointEl.dataset.wp;
+  const w=wpData[name];
+  if(!w||w.distance>settings.gotoRadius)return;
+  navigating=true;
+  activeWaypointName=name;
+  state.hold=false;
+  state.cruise=false;
+  // In the simulator, point the commanded motor direction toward the waypoint bearing.
+  const targetBearing=parseFloat(w.bearing);
+  if(Number.isFinite(targetBearing)){
+    state.steer=normalize180(targetBearing-state.currentHeading);
+    state.desiredHeading=normalize360(targetBearing);
+  }
+  const go=by("goTo"); if(go){go.textContent="NAVIGATING…";go.classList.add("navigating")}
+  safeText("goNote","Auto pilot active • steering locked • tap EXIT AUTO PILOT to cancel");
+  render();
+  requestAnimationFrame(drawRoute);
+}
 
 function drawRoute(){
   const svg=by("routeSvg"),line=by("routePath"),boat=q(".mapBoat"),map=q(".mapMock");
@@ -195,13 +235,8 @@ qa(".wp").forEach(b=>on(b,"click",()=>{
   if(navigating)requestAnimationFrame(drawRoute);
 }));
 on(by("closeWp"),"click",()=>{const c=by("waypointCard");if(c)c.classList.add("hidden")});
-on(by("goTo"),"click",()=>{
-  if(!selectedWaypointEl)return;
-  navigating=true;
-  const go=by("goTo"); if(go){go.textContent="NAVIGATING…";go.classList.add("navigating")}
-  safeText("goNote","Navigating to waypoint • use STOP to cancel");
-  requestAnimationFrame(drawRoute);
-});
+on(by("goTo"),"click",engageAutopilot);
+on(by("direction"),"click",()=>{if(navigating)cancelAutopilot()});
 on(window,"resize",()=>requestAnimationFrame(drawRoute));
 
 on(by("batteryCard"),"click",()=>page("batteryPage"));
