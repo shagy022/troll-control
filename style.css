@@ -223,3 +223,11 @@ body[data-theme="highvis"] .ampDraw b{color:#63e28f}
 @media(max-width:380px){
   .direction{width:220px;transform:translateX(-28px)}
 }
+
+/* v0.19 Scout Troll + status alignment */
+.direction.autopilotExit{
+  white-space:nowrap!important;
+  font-size:10px!important;
+  letter-spacing:1px!important;
+}
+#zig span{white-space:nowrap}
