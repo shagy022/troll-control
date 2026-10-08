@@ -7,13 +7,13 @@ const on=(el,event,fn,opts)=>{if(el)el.addEventListener(event,fn,opts)};
 
 let units="mph";
 let motionToken=0;
-const settings={throttleStep:10,gotoRadius:500,reverseSeconds:5,steerStep:10,lossAction:"stop",theme:"dark"};
+const settings={throttleStep:10,gotoRadius:500,reverseSeconds:5,steerStep:10,signalLossSeconds:5,theme:"dark"};
 try{Object.assign(settings,JSON.parse(localStorage.getItem("trollSettings")||"{}"))}catch(_){}
 function saveSettings(){try{localStorage.setItem("trollSettings",JSON.stringify(settings))}catch(_){}}
 
 const state={
   speed:0, dir:0, currentHeading:287, desiredHeading:287, steer:0,
-  anchor:false, hold:false, cruise:false, transition:false
+  anchor:false, hold:false, cruise:false, transition:false, signalLost:false
 };
 
 function safeText(id,value){const el=by(id);if(el)el.textContent=value}
@@ -39,10 +39,17 @@ if(helm&&thrust){
   }
 }
 
-function angleTransform(el,angle,radius){
-  if(!el)return;
-  el.style.transform="translateX(-50%) rotate("+angle+"deg)";
-  el.style.transformOrigin="50% "+radius+"px";
+function positionOnSteerRing(el,angle,radius,rotate){
+  if(!el||!ring)return;
+  const rad=angle*Math.PI/180;
+  const cx=ring.clientWidth/2;
+  const cy=ring.clientHeight/2;
+  const x=cx+Math.sin(rad)*radius;
+  const y=cy-Math.cos(rad)*radius;
+  el.style.left=x+"px";
+  el.style.top=y+"px";
+  el.style.transform="translate(-50%,-50%)"+(rotate?" rotate("+angle+"deg)":"");
+  el.style.transformOrigin="50% 50%";
 }
 
 function render(){
@@ -57,27 +64,49 @@ function render(){
   safeClass("hold","on",state.hold);
   safeClass("cruise","on",state.cruise);
 
-  const gear=navigating?"EXIT AUTO PILOT":state.transition?"REVERSING…":state.dir>0?"FORWARD":state.dir<0?"REVERSE":"NEUTRAL";
+  const gear=state.signalLost?"NO SIGNAL MANUAL ONLY":navigating?"EXIT AUTO PILOT":state.transition?"REVERSING…":state.dir>0?"FORWARD":state.dir<0?"REVERSE":"NEUTRAL";
   safeText("direction",gear);
   const dir=by("direction");
   if(dir){
     dir.className="direction";
-    if(navigating)dir.classList.add("autopilotExit");
+    if(state.signalLost)dir.classList.add("noSignal");
+    else if(navigating)dir.classList.add("autopilotExit");
     else if(state.dir>0)dir.classList.add("forwardDir");
     else if(state.dir<0)dir.classList.add("reverseDir");
   }
+
+  const connection=by("connectionStatus");
+  if(connection){
+    connection.textContent=state.signalLost?"NO SIGNAL":"SIMULATOR CONNECTED";
+    connection.classList.toggle("noSignalStatus",state.signalLost);
+  }
+
+  const steeringLocked=navigating||state.signalLost;
   const leftBtn=by("left"),rightBtn=by("right"),centerBtn=by("center");
-  if(leftBtn)leftBtn.disabled=navigating;
-  if(rightBtn)rightBtn.disabled=navigating;
-  if(centerBtn)centerBtn.disabled=navigating;
+  if(leftBtn)leftBtn.disabled=steeringLocked;
+  if(rightBtn)rightBtn.disabled=steeringLocked;
+  if(centerBtn)centerBtn.disabled=steeringLocked;
   if(helm)helm.classList.toggle("autopilotSteering",navigating);
+
+  ["forward","reverse","speed","cruise","anchor","hold"].forEach(id=>{
+    const el=by(id); if(!el)return;
+    el.disabled=state.signalLost;
+    el.classList.toggle("motorLocked",state.signalLost);
+  });
+  const goBtn=by("goTo");
+  if(goBtn&&state.signalLost){goBtn.disabled=true;goBtn.classList.add("motorLocked")}
+  const simBtn=by("simulateSignal");
+  if(simBtn){
+    simBtn.textContent=state.signalLost?"RESTORE SIGNAL":"SIMULATE SIGNAL LOSS";
+    simBtn.classList.toggle("restore",state.signalLost);
+  }
 
   const lit=Math.round(state.speed/2.5);
   qa(".thrustDot").forEach((d,i)=>d.classList.toggle("on",i<lit));
 
-  if(helm){
-    angleTransform(knob,state.steer,helm.clientWidth/2+8);
-    angleTransform(headingMarker,state.steer,helm.clientWidth/2-10);
+  if(ring){
+    positionOnSteerRing(knob,state.steer,ring.clientWidth/2-2,false);
+    positionOnSteerRing(headingMarker,state.steer,ring.clientWidth/2-22,true);
   }
   if(desiredArrow)desiredArrow.style.transform="translate(-50%,-50%) rotate("+state.steer+"deg)";
 
@@ -97,7 +126,7 @@ function page(id){
 }
 
 function setSteer(v){
-  if(navigating)return;
+  if(navigating||state.signalLost)return;
   state.steer=normalize180(v);
   state.desiredHeading=normalize360(state.currentHeading+state.steer);
   render();
@@ -108,7 +137,7 @@ on(by("right"),"click",()=>setSteer(state.steer+settings.steerStep));
 on(by("center"),"click",()=>setSteer(0));
 
 function dial(e){
-  if(navigating||!ring)return;
+  if(navigating||state.signalLost||!ring)return;
   const r=ring.getBoundingClientRect();
   const x=e.clientX-(r.left+r.width/2);
   const y=e.clientY-(r.top+r.height/2);
@@ -118,6 +147,7 @@ on(knob,"pointerdown",e=>{try{knob.setPointerCapture(e.pointerId)}catch(_){} dia
 on(knob,"pointermove",e=>{if(knob&&knob.hasPointerCapture&&knob.hasPointerCapture(e.pointerId))dial(e)});
 
 function forward(){
+  if(state.signalLost)return;
   motionToken++;
   state.transition=false;
   if(state.dir<0){state.speed=0;state.dir=1}
@@ -126,7 +156,7 @@ function forward(){
 }
 
 async function reverse(){
-  if(state.transition)return;
+  if(state.signalLost||state.transition)return;
   const token=++motionToken;
   if(state.dir>0&&state.speed>0){
     state.transition=true;
@@ -157,6 +187,7 @@ async function reverse(){
 on(by("forward"),"click",forward);
 on(by("reverse"),"click",reverse);
 on(by("speed"),"input",e=>{
+  if(state.signalLost)return;
   motionToken++;
   state.transition=false;
   state.speed=Math.max(0,Math.min(100,Number(e.target.value)||0));
@@ -165,9 +196,9 @@ on(by("speed"),"input",e=>{
   render();
 });
 
-on(by("anchor"),"click",()=>{state.anchor=!state.anchor;if(state.anchor)state.cruise=false;render()});
-on(by("hold"),"click",()=>{state.hold=!state.hold;render()});
-on(by("cruise"),"click",()=>{state.cruise=!state.cruise;if(state.cruise)state.anchor=false;render()});
+on(by("anchor"),"click",()=>{if(state.signalLost)return;state.anchor=!state.anchor;if(state.anchor)state.cruise=false;render()});
+on(by("hold"),"click",()=>{if(state.signalLost)return;state.hold=!state.hold;render()});
+on(by("cruise"),"click",()=>{if(state.signalLost)return;state.cruise=!state.cruise;if(state.cruise)state.anchor=false;render()});
 on(by("stop"),"click",()=>{motionToken++;state.speed=0;state.dir=0;state.anchor=false;state.cruise=false;state.transition=false;if(navigating){navigating=false;activeWaypointName="";const route=by("routeSvg");if(route)route.classList.remove("on");const go=by("goTo");if(go){go.textContent="GO TO";go.classList.remove("navigating")}}render()});
 
 const wpData={
@@ -191,7 +222,7 @@ function cancelAutopilot(){
 }
 
 function engageAutopilot(){
-  if(!selectedWaypointEl)return;
+  if(state.signalLost||!selectedWaypointEl)return;
   const name=selectedWaypointEl.dataset.wp;
   const w=wpData[name];
   if(!w||w.distance>settings.gotoRadius)return;
@@ -236,8 +267,45 @@ qa(".wp").forEach(b=>on(b,"click",()=>{
 }));
 on(by("closeWp"),"click",()=>{const c=by("waypointCard");if(c)c.classList.add("hidden")});
 on(by("goTo"),"click",engageAutopilot);
-on(by("direction"),"click",()=>{if(navigating)cancelAutopilot()});
+on(by("direction"),"click",()=>{if(!state.signalLost&&navigating)cancelAutopilot()});
 on(window,"resize",()=>requestAnimationFrame(drawRoute));
+
+
+async function loseSignal(){
+  if(state.signalLost)return;
+  const token=++motionToken;
+  state.signalLost=true;
+  state.transition=false;
+  state.anchor=false;
+  state.hold=false;
+  state.cruise=false;
+  if(navigating){
+    navigating=false;
+    activeWaypointName="";
+    const route=by("routeSvg");if(route)route.classList.remove("on");
+    const go=by("goTo");if(go){go.textContent="GO TO";go.classList.remove("navigating")}
+  }
+  const start=state.speed;
+  const steps=Math.max(10,Math.round(settings.signalLossSeconds*10));
+  render();
+  for(let i=1;i<=steps;i++){
+    await new Promise(r=>setTimeout(r,100));
+    if(token!==motionToken||!state.signalLost)return;
+    state.speed=start*(1-i/steps);
+    render();
+  }
+  if(token!==motionToken||!state.signalLost)return;
+  state.speed=0;
+  state.dir=0;
+  render();
+}
+function restoreSignal(){
+  motionToken++;
+  state.signalLost=false;
+  state.transition=false;
+  render();
+}
+on(by("simulateSignal"),"click",()=>state.signalLost?restoreSignal():loseSignal());
 
 on(by("batteryCard"),"click",()=>page("batteryPage"));
 qa(".back").forEach(b=>on(b,"click",()=>page("controlPage")));
@@ -259,12 +327,12 @@ function syncSettingsUI(){
   document.body.dataset.theme=settings.theme||"dark";
   qa(".theme").forEach(x=>x.classList.toggle("active",x.dataset.theme===settings.theme));
   qa(".unit").forEach(x=>x.classList.toggle("active",x.dataset.unit===units));
-  const ts=by("throttleStep"),gr=by("gotoRadius"),rs=by("reverseSeconds"),ss=by("steerStep"),la=by("lossAction");
+  const ts=by("throttleStep"),gr=by("gotoRadius"),rs=by("reverseSeconds"),ss=by("steerStep"),sl=by("signalLossSeconds");
   if(ts)ts.value=String(settings.throttleStep);
   if(gr)gr.value=String(settings.gotoRadius);
   if(rs)rs.value=String(settings.reverseSeconds);
   if(ss)ss.value=String(settings.steerStep);
-  if(la)la.value=settings.lossAction;
+  if(sl)sl.value=String(settings.signalLossSeconds);
 }
 qa(".theme").forEach(b=>on(b,"click",()=>{
   settings.theme=b.dataset.theme||"dark";saveSettings();syncSettingsUI();
@@ -276,7 +344,7 @@ on(by("throttleStep"),"change",e=>{settings.throttleStep=Math.max(5,Math.min(20,
 on(by("gotoRadius"),"change",e=>{settings.gotoRadius=Math.max(100,Math.min(2000,Number(e.target.value)||500));e.target.value=settings.gotoRadius;saveSettings()});
 on(by("reverseSeconds"),"change",e=>{settings.reverseSeconds=Math.max(1,Math.min(10,Number(e.target.value)||5));e.target.value=settings.reverseSeconds;saveSettings()});
 on(by("steerStep"),"change",e=>{settings.steerStep=Math.max(5,Math.min(20,Number(e.target.value)||10));saveSettings()});
-on(by("lossAction"),"change",e=>{settings.lossAction=e.target.value==="neutral"?"neutral":"stop";saveSettings()});
+on(by("signalLossSeconds"),"change",e=>{settings.signalLossSeconds=Math.max(1,Math.min(10,Number(e.target.value)||5));e.target.value=settings.signalLossSeconds;saveSettings()});
 syncSettingsUI();
 
 window.addEventListener("error",e=>console.error("TROLL runtime error",e.error||e.message));
