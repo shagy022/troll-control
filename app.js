@@ -105,15 +105,20 @@ function render(){
   safeClass("cruise","on",state.cruise);
   safeClass("zig","on",state.zigTroll);
 
-  const gear=state.signalLost?"NO SIGNAL MANUAL ONLY":state.zigTroll?"SCOUT TROLL AUTOPILOT":navigating?"EXIT AUTO PILOT":state.transition?(state.transitionTarget>0?"SHIFTING TO FORWARD…":"SHIFTING TO REVERSE…"):state.dir>0?"FORWARD":state.dir<0?"REVERSE":"NEUTRAL";
-  safeText("direction",gear);
+  const gear=state.signalLost?"NO SIGNAL MANUAL ONLY":state.zigTroll?"SCOUT TROLL AUTOPILOT":state.transition?(state.transitionTarget>0?"SHIFTING TO FORWARD…":"SHIFTING TO REVERSE…"):state.dir>0?"FORWARD":state.dir<0?"REVERSE":"NEUTRAL";
   const dir=by("direction");
   if(dir){
     dir.className="direction";
-    if(state.signalLost)dir.classList.add("noSignal");
-    else if(navigating||state.zigTroll)dir.classList.add("autopilotExit");
-    else if(state.dir>0)dir.classList.add("forwardDir");
-    else if(state.dir<0)dir.classList.add("reverseDir");
+    if(navigating){
+      dir.classList.add("autopilotExit","navWaypointStatus");
+      dir.innerHTML='<span class="navMain">AUTO NAVIGATING TO WAYPOINT</span><span class="navDistance">'+Math.max(0,Math.round(navRemaining))+' ft to location</span>';
+    }else{
+      dir.textContent=gear;
+      if(state.signalLost)dir.classList.add("noSignal");
+      else if(state.zigTroll)dir.classList.add("autopilotExit");
+      else if(state.dir>0)dir.classList.add("forwardDir");
+      else if(state.dir<0)dir.classList.add("reverseDir");
+    }
     dir.classList.toggle("hidden",state.anchor);
   }
   const controlPage=by("controlPage");
@@ -479,7 +484,7 @@ function engageAutopilot(){
   navRemaining=w.distance;
   state.dir=1;
   if(state.speed<30)state.speed=50;
-  safeText("goNote","Auto pilot active • "+Math.round(navRemaining)+" ft remaining • arrival will engage Spot Lock");
+  safeText("goNote","Navigating to waypoint • arrival will engage Spot Lock");
   clearNavTimer();
   navTimer=setInterval(()=>{
     if(!navigating||state.signalLost){clearNavTimer();return}
@@ -487,7 +492,8 @@ function engageAutopilot(){
     const feetPerTick=Math.max(.25,mph*1.46667*.25);
     navRemaining=Math.max(0,navRemaining-feetPerTick);
     safeText("wpDistance",Math.max(0,Math.round(navRemaining))+" ft");
-    safeText("goNote","Auto pilot active • "+Math.max(0,Math.round(navRemaining))+" ft remaining • arrival will engage Spot Lock");
+    safeText("goNote","Navigating to waypoint • arrival will engage Spot Lock");
+    render();
     if(navRemaining<=3)completeGoTo();
   },250);
   render();
