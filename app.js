@@ -493,11 +493,11 @@ function engageAutopilot(){
   navTimer=setInterval(()=>{
     if(!navigating||state.signalLost){clearNavTimer();return}
 
-    // Inside 20 ft, progressively reduce thrust as we approach the waypoint.
+    // Inside 25 ft, progressively reduce thrust as we approach the waypoint.
     // Capture the speed at entry so the ramp is smooth and predictable.
-    if(navRemaining<=20){
+    if(navRemaining<=25){
       if(navApproachSpeed===null)navApproachSpeed=Math.max(10,state.speed);
-      const progress=Math.max(0,Math.min(1,(navRemaining-3)/17));
+      const progress=Math.max(0,Math.min(1,(navRemaining-3)/22));
       state.speed=Math.max(8,navApproachSpeed*progress);
     }
 
