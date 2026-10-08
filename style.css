@@ -272,3 +272,14 @@ body[data-theme="gunmetal"] .spotField{background:radial-gradient(circle,#3c4247
 #controlPage.spotLockActive .modes{display:none!important}
 #controlPage.spotLockActive .spotLockPanel{margin-top:8px!important}
 #controlPage.spotLockActive .stop{margin-top:10px}
+
+/* v0.22 settings help */
+.settingsList article{position:relative;padding-right:54px!important}
+.settingInfoBtn{
+  position:absolute;right:12px;top:12px;width:34px;height:34px;border-radius:50%;
+  border:1px solid var(--line);background:rgba(255,255,255,.04);color:var(--cyan);
+  font-size:17px;display:grid;place-items:center;padding:0;z-index:2
+}
+.settingInfoBtn:active{transform:scale(.94)}
+.settingRangeNote{display:block;margin-top:7px;font-size:9px;color:var(--muted)}
+body[data-theme="classic"] .settingInfoBtn{background:#f3f5f6;color:#006fa3}
