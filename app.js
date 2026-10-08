@@ -644,7 +644,7 @@ qa(".wp").forEach(b=>on(b,"click",()=>{
   if(navigating)requestAnimationFrame(drawRoute);
 }));
 on(by("closeWp"),"click",()=>{const c=by("waypointCard");if(c)c.classList.add("hidden")});
-on(by("goTo"),"click",engageAutopilot);
+on(by("goTo"),"click",()=>engageAutopilot());
 on(by("direction"),"click",()=>{if(state.signalLost||state.steeringFault)return;if(state.zigTroll)cancelZigTroll(true);else if(navigating)cancelAutopilot(true)});
 on(by("resumeAuto"),"click",()=>{
   if(!resumeState||resumeSeconds<=0||state.signalLost||state.steeringFault)return;
