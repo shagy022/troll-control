@@ -11,7 +11,7 @@ let zigTimer=null;
 let zigLeg="diag";
 let zigFeet=0;
 let zigBaseHeading=0;
-const settings={throttleStep:10,gotoRadius:500,reverseSeconds:5,steerStep:10,signalLossSeconds:5,motorHomeOffset:0,theme:"dark"};
+const settings={throttleStep:10,gotoRadius:500,reverseSeconds:5,steerStep:10,signalLossSeconds:5,autoSteerSeconds:5,motorHomeOffset:0,theme:"dark"};
 try{Object.assign(settings,JSON.parse(localStorage.getItem("trollSettings")||"{}"))}catch(_){} const allowedThemes=["dark","classic","gunmetal","deepsea","nightvision","highvis"];if(!allowedThemes.includes(settings.theme))settings.theme="dark";
 function saveSettings(){try{localStorage.setItem("trollSettings",JSON.stringify(settings))}catch(_){}}
 
@@ -24,6 +24,32 @@ function safeText(id,value){const el=by(id);if(el)el.textContent=value}
 function safeClass(id,name,onState){const el=by(id);if(el)el.classList.toggle(name,onState)}
 function normalize180(v){return ((v+180)%360+360)%360-180}
 function normalize360(v){return ((v%360)+360)%360}
+function clampManualSteer(v){
+  const a=normalize180(v);
+  if(state.dir<0){
+    // Reverse is restricted to the rear half: 3:00 through 6:00 to 9:00.
+    if(a>=90||a<=-90)return a;
+    return a>=0?90:-90;
+  }
+  // Forward/neutral manual steering is restricted to the front half: 9:00 to 3:00.
+  return Math.max(-90,Math.min(90,a));
+}
+let autoSteerToken=0;
+async function smoothAutoSteer(target,durationSeconds=settings.autoSteerSeconds){
+  const token=++autoSteerToken;
+  const start=normalize180(state.steer);
+  const end=normalize180(target);
+  const delta=normalize180(end-start);
+  const ms=Math.max(100,Number(durationSeconds||5)*1000);
+  const steps=Math.max(1,Math.round(ms/50));
+  for(let i=1;i<=steps;i++){
+    await new Promise(r=>setTimeout(r,50));
+    if(token!==autoSteerToken||state.signalLost)return;
+    state.steer=normalize180(start+delta*(i/steps));
+    state.desiredHeading=normalize360(state.currentHeading+state.steer);
+    render();
+  }
+}
 
 const helm=by("helm");
 const thrust=by("thrustRing");
@@ -69,7 +95,7 @@ function render(){
   safeClass("cruise","on",state.cruise);
   safeClass("zig","on",state.zigTroll);
 
-  const gear=state.signalLost?"NO SIGNAL MANUAL ONLY":state.zigTroll?"ZIG TROLL AUTOPILOT":navigating?"EXIT AUTO PILOT":state.transition?(state.transitionTarget>0?"SHIFTING TO FORWARD…":"SHIFTING TO REVERSE…"):state.dir>0?"FORWARD":state.dir<0?"REVERSE":"NEUTRAL";
+  const gear=state.signalLost?"NO SIGNAL MANUAL ONLY":state.zigTroll?"SCOUT TROLL AUTOPILOT":navigating?"EXIT AUTO PILOT":state.transition?(state.transitionTarget>0?"SHIFTING TO FORWARD…":"SHIFTING TO REVERSE…"):state.dir>0?"FORWARD":state.dir<0?"REVERSE":"NEUTRAL";
   safeText("direction",gear);
   const dir=by("direction");
   if(dir){
@@ -136,7 +162,7 @@ function page(id){
 
 function setSteer(v){
   if(navigating||state.zigTroll||state.signalLost)return;
-  state.steer=normalize180(v);
+  state.steer=clampManualSteer(v);
   state.desiredHeading=normalize360(state.currentHeading+state.steer);
   render();
 }
@@ -211,6 +237,9 @@ async function changeDirection(targetDir){
   const needsFlip=(state.dir!==0&&state.dir!==targetDir)||(state.dir===0&&targetDir<0);
   if(needsFlip){
     state.steer=normalize180(state.steer+180);
+    state.steer=targetDir<0
+      ? (state.steer>=0?Math.max(90,state.steer):Math.min(-90,state.steer))
+      : Math.max(-90,Math.min(90,state.steer));
     state.desiredHeading=normalize360(state.currentHeading+state.steer);
     render();
     await new Promise(r=>setTimeout(r,500));
@@ -247,11 +276,11 @@ on(by("speed"),"input",e=>{
 function applyZigLeg(){
   const offset=zigLeg==="diag"?45:-90; // 1:30 then 9:00, relative to heading captured at start
   const targetBearing=normalize360(zigBaseHeading+offset);
-  state.steer=normalize180(targetBearing-state.currentHeading);
-  state.desiredHeading=targetBearing;
-  render();
+  const targetSteer=normalize180(targetBearing-state.currentHeading);
+  smoothAutoSteer(targetSteer,settings.autoSteerSeconds);
 }
 function cancelZigTroll(){
+  autoSteerToken++;
   if(zigTimer){clearInterval(zigTimer);zigTimer=null}
   if(!state.zigTroll)return;
   state.zigTroll=false;
@@ -294,7 +323,7 @@ on(by("anchor"),"click",()=>{if(state.signalLost||navigating||state.zigTroll)ret
 on(by("hold"),"click",()=>{if(state.signalLost||navigating||state.zigTroll)return;state.hold=!state.hold;render()});
 on(by("cruise"),"click",()=>{if(state.signalLost||state.zigTroll)return;state.cruise=!state.cruise;if(state.cruise)state.anchor=false;render()});
 on(by("zig"),"click",()=>state.zigTroll?cancelZigTroll():startZigTroll());
-on(by("stop"),"click",()=>{if(state.zigTroll)cancelZigTroll();motionToken++;if(zigTimer){clearInterval(zigTimer);zigTimer=null} state.zigTroll=false;zigFeet=0;zigLeg="diag"; state.speed=0;state.dir=0;state.anchor=false;state.hold=false;state.cruise=false;state.transition=false;state.transitionTarget=0;if(navigating){navigating=false;activeWaypointName="";const route=by("routeSvg");if(route)route.classList.remove("on");const go=by("goTo");if(go){go.textContent="GO TO";go.classList.remove("navigating")}}render()});
+on(by("stop"),"click",()=>{autoSteerToken++;if(state.zigTroll)cancelZigTroll();motionToken++;if(zigTimer){clearInterval(zigTimer);zigTimer=null} state.zigTroll=false;zigFeet=0;zigLeg="diag"; state.speed=0;state.dir=0;state.anchor=false;state.hold=false;state.cruise=false;state.transition=false;state.transitionTarget=0;if(navigating){navigating=false;activeWaypointName="";const route=by("routeSvg");if(route)route.classList.remove("on");const go=by("goTo");if(go){go.textContent="GO TO";go.classList.remove("navigating")}}render()});
 
 const wpData={
   "Rock Pile":{coords:"30.12345, -83.45678",distance:286,bearing:"042°"},
@@ -306,6 +335,7 @@ let navigating=false;
 let activeWaypointName="";
 
 function cancelAutopilot(){
+  autoSteerToken++;
   if(!navigating)return;
   navigating=false;
   activeWaypointName="";
@@ -329,8 +359,7 @@ function engageAutopilot(){
   // In the simulator, point the commanded motor direction toward the waypoint bearing.
   const targetBearing=parseFloat(w.bearing);
   if(Number.isFinite(targetBearing)){
-    state.steer=normalize180(targetBearing-state.currentHeading);
-    state.desiredHeading=normalize360(targetBearing);
+    smoothAutoSteer(normalize180(targetBearing-state.currentHeading),settings.autoSteerSeconds);
   }
   const go=by("goTo"); if(go){go.textContent="NAVIGATING…";go.classList.add("navigating")}
   safeText("goNote","Auto pilot active • steering locked • tap EXIT AUTO PILOT to cancel");
@@ -371,6 +400,7 @@ async function loseSignal(){
   if(state.signalLost)return;
   const token=++motionToken;
   state.signalLost=true;
+  autoSteerToken++;
   state.transition=false;state.transitionTarget=0;
   state.anchor=false;
   state.hold=false;
@@ -502,12 +532,13 @@ function syncSettingsUI(){
   document.body.dataset.theme=settings.theme||"dark";
   qa(".theme").forEach(x=>x.classList.toggle("active",x.dataset.theme===settings.theme));
   qa(".unit").forEach(x=>x.classList.toggle("active",x.dataset.unit===units));
-  const ts=by("throttleStep"),gr=by("gotoRadius"),rs=by("reverseSeconds"),ss=by("steerStep"),sl=by("signalLossSeconds");
+  const ts=by("throttleStep"),gr=by("gotoRadius"),rs=by("reverseSeconds"),ss=by("steerStep"),sl=by("signalLossSeconds"),as=by("autoSteerSeconds");
   if(ts)ts.value=String(settings.throttleStep);
   if(gr)gr.value=String(settings.gotoRadius);
   if(rs)rs.value=String(settings.reverseSeconds);
   if(ss)ss.value=String(settings.steerStep);
   if(sl)sl.value=String(settings.signalLossSeconds);
+  if(as)as.value=String(settings.autoSteerSeconds);
   safeText("homeOffsetStatus","Home offset: "+Math.round(settings.motorHomeOffset||0)+"°");
 }
 qa(".theme").forEach(b=>on(b,"click",()=>{
@@ -521,6 +552,7 @@ on(by("gotoRadius"),"change",e=>{settings.gotoRadius=Math.max(100,Math.min(2000,
 on(by("reverseSeconds"),"change",e=>{settings.reverseSeconds=Math.max(1,Math.min(10,Number(e.target.value)||5));e.target.value=settings.reverseSeconds;saveSettings()});
 on(by("steerStep"),"change",e=>{settings.steerStep=Math.max(5,Math.min(20,Number(e.target.value)||10));saveSettings()});
 on(by("signalLossSeconds"),"change",e=>{settings.signalLossSeconds=Math.max(1,Math.min(10,Number(e.target.value)||5));e.target.value=settings.signalLossSeconds;saveSettings()});
+on(by("autoSteerSeconds"),"change",e=>{settings.autoSteerSeconds=Math.max(1,Math.min(15,Number(e.target.value)||5));e.target.value=settings.autoSteerSeconds;saveSettings()});
 syncSettingsUI();
 
 window.addEventListener("error",e=>console.error("TROLL runtime error",e.error||e.message));
