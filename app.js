@@ -144,8 +144,27 @@ function dial(e){
   const y=e.clientY-(r.top+r.height/2);
   setSteer(Math.atan2(x,-y)*180/Math.PI);
 }
-on(knob,"pointerdown",e=>{try{knob.setPointerCapture(e.pointerId)}catch(_){} dial(e)});
-on(knob,"pointermove",e=>{if(knob&&knob.hasPointerCapture&&knob.hasPointerCapture(e.pointerId))dial(e)});
+let helmSteerPointer=null;
+function beginHelmSteer(e){
+  if(navigating||state.signalLost)return;
+  if(e.target.closest&&e.target.closest("button"))return;
+  helmSteerPointer=e.pointerId;
+  try{helm.setPointerCapture(e.pointerId)}catch(_){}
+  dial(e);
+}
+function moveHelmSteer(e){
+  if(helmSteerPointer!==e.pointerId)return;
+  dial(e);
+}
+function endHelmSteer(e){
+  if(helmSteerPointer!==e.pointerId)return;
+  helmSteerPointer=null;
+  try{helm.releasePointerCapture(e.pointerId)}catch(_){}
+}
+on(helm,"pointerdown",beginHelmSteer);
+on(helm,"pointermove",moveHelmSteer);
+on(helm,"pointerup",endHelmSteer);
+on(helm,"pointercancel",endHelmSteer);
 
 function forward(){
   if(state.signalLost)return;
