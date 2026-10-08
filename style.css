@@ -189,3 +189,8 @@ body[data-theme="highvis"] .ampDraw b{color:#63e28f}
 
 /* v0.17.1 helm horizontal position */
 .helm{transform:translateX(12px)}
+
+/* v0.17.2 helm sizing */
+.helm{width:min(68.4vw,279px)!important}
+.steerKnob{width:26px!important;height:26px!important}
+@media(max-width:380px){.helm{width:239px!important}}
