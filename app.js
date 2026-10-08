@@ -7,7 +7,7 @@ const on=(el,event,fn,opts)=>{if(el)el.addEventListener(event,fn,opts)};
 
 let units="mph";
 let motionToken=0;
-const settings={throttleStep:10,gotoRadius:500,reverseSeconds:5,steerStep:10,signalLossSeconds:5,theme:"dark"};
+const settings={throttleStep:10,gotoRadius:500,reverseSeconds:5,steerStep:10,signalLossSeconds:5,motorHomeOffset:0,theme:"dark"};
 try{Object.assign(settings,JSON.parse(localStorage.getItem("trollSettings")||"{}"))}catch(_){}
 function saveSettings(){try{localStorage.setItem("trollSettings",JSON.stringify(settings))}catch(_){}}
 
@@ -82,10 +82,9 @@ function render(){
   }
 
   const steeringLocked=navigating||state.signalLost;
-  const leftBtn=by("left"),rightBtn=by("right"),centerBtn=by("center");
+  const leftBtn=by("left"),rightBtn=by("right");
   if(leftBtn)leftBtn.disabled=steeringLocked;
   if(rightBtn)rightBtn.disabled=steeringLocked;
-  if(centerBtn)centerBtn.disabled=steeringLocked;
   if(helm)helm.classList.toggle("autopilotSteering",navigating);
 
   ["forward","reverse","speed","cruise","anchor","hold"].forEach(id=>{
@@ -134,7 +133,6 @@ function setSteer(v){
 
 on(by("left"),"click",()=>setSteer(state.steer-settings.steerStep));
 on(by("right"),"click",()=>setSteer(state.steer+settings.steerStep));
-on(by("center"),"click",()=>setSteer(0));
 
 function dial(e){
   if(navigating||state.signalLost||!ring)return;
@@ -322,6 +320,82 @@ on(by("closeMenu"),"click",()=>menu(false));
 on(by("drawerShade"),"click",()=>menu(false));
 qa("[data-open]").forEach(b=>on(b,"click",()=>{menu(false);page(b.dataset.open)}));
 
+
+let calibrationRunning=false;
+let calibrationTempOffset=0;
+let calibrationToken=0;
+
+function showCalStep(id){
+  ["calStepWarn","calStepSweep","calStepAdjust","calStepConfirm"].forEach(x=>{const el=by(x);if(el)el.classList.toggle("hidden",x!==id)});
+}
+function openCalibration(){
+  if(state.signalLost)return;
+  calibrationRunning=false;
+  calibrationTempOffset=Number(settings.motorHomeOffset)||0;
+  safeText("calOffset",Math.round(calibrationTempOffset)+"°");
+  showCalStep("calStepWarn");
+  const ov=by("calibrationOverlay");if(ov)ov.classList.remove("hidden");
+}
+function closeCalibration(){
+  calibrationToken++;
+  calibrationRunning=false;
+  const ov=by("calibrationOverlay");if(ov)ov.classList.add("hidden");
+}
+async function runCalibrationSweep(){
+  if(calibrationRunning)return;
+  calibrationRunning=true;
+  const token=++calibrationToken;
+  motionToken++;
+  state.speed=0;state.dir=0;state.anchor=false;state.hold=false;state.cruise=false;state.transition=false;
+  if(navigating)cancelAutopilot();
+  render();
+  showCalStep("calStepSweep");
+  const needle=by("calNeedle");
+  for(let deg=0;deg<=360;deg+=6){
+    await new Promise(r=>setTimeout(r,45));
+    if(token!==calibrationToken)return;
+    if(needle)needle.style.transform="rotate("+deg+"deg)";
+    safeText("calAngle",deg+"°");
+  }
+  for(let deg=360;deg>=0;deg-=12){
+    await new Promise(r=>setTimeout(r,25));
+    if(token!==calibrationToken)return;
+    if(needle)needle.style.transform="rotate("+deg+"deg)";
+    safeText("calAngle",(deg%360)+"°");
+  }
+  calibrationTempOffset=Number(settings.motorHomeOffset)||0;
+  safeText("calOffset",Math.round(calibrationTempOffset)+"°");
+  calibrationRunning=false;
+  showCalStep("calStepAdjust");
+}
+function nudgeCalibration(delta){
+  if(calibrationRunning)return;
+  calibrationTempOffset=normalize180(calibrationTempOffset+delta);
+  safeText("calOffset",Math.round(calibrationTempOffset)+"°");
+  // Simulator preview: represent the motor's physical adjustment on the helm.
+  state.steer=calibrationTempOffset;
+  state.desiredHeading=normalize360(state.currentHeading+state.steer);
+  render();
+}
+function saveCalibration(){
+  settings.motorHomeOffset=normalize180(calibrationTempOffset);
+  saveSettings();
+  syncSettingsUI();
+  state.steer=0;
+  state.desiredHeading=state.currentHeading;
+  render();
+  closeCalibration();
+}
+
+on(by("calibrateSteering"),"click",openCalibration);
+on(by("calCancel"),"click",closeCalibration);
+on(by("calStart"),"click",runCalibrationSweep);
+on(by("calLeft"),"click",()=>nudgeCalibration(-1));
+on(by("calRight"),"click",()=>nudgeCalibration(1));
+on(by("calConfirm"),"click",()=>showCalStep("calStepConfirm"));
+on(by("calNo"),"click",()=>showCalStep("calStepAdjust"));
+on(by("calYes"),"click",saveCalibration);
+
 function syncSettingsUI(){
   units=settings.units==="knots"?"knots":"mph";
   document.body.dataset.theme=settings.theme||"dark";
@@ -333,6 +407,7 @@ function syncSettingsUI(){
   if(rs)rs.value=String(settings.reverseSeconds);
   if(ss)ss.value=String(settings.steerStep);
   if(sl)sl.value=String(settings.signalLossSeconds);
+  safeText("homeOffsetStatus","Home offset: "+Math.round(settings.motorHomeOffset||0)+"°");
 }
 qa(".theme").forEach(b=>on(b,"click",()=>{
   settings.theme=b.dataset.theme||"dark";saveSettings();syncSettingsUI();
