@@ -302,3 +302,15 @@ body[data-theme="classic"] .settingInfoBtn{background:#f3f5f6;color:#006fa3}
   letter-spacing:.4px;
   color:var(--text);
 }
+
+/* v0.23.0 autopilot tuning / Spot Lock feedback / resume */
+.spotCorrection{display:grid;grid-template-columns:1fr 1fr;gap:8px;margin:10px 0 2px}
+.spotCorrection>div{border:1px solid var(--line);border-radius:11px;background:rgba(255,255,255,.025);padding:9px 6px}
+.spotCorrection small,.spotCorrection b{display:block}
+.spotCorrection small{font-size:8px;color:var(--muted);font-weight:800}
+.spotCorrection b{font-size:13px;margin-top:3px;color:var(--cyan)}
+#spotAction.recovering{color:var(--red)}
+#spotAction.correcting{color:#ffd33d}
+#spotAction.holding{color:var(--green)}
+.resumeAuto{width:100%;height:48px;margin-top:10px;border:1px solid var(--cyan);border-radius:14px;background:#07303b;color:var(--cyan);font-weight:900;font-size:13px;box-shadow:0 0 14px #0bc8ff22}
+.resumeAuto:active{transform:scale(.99)}
