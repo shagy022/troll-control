@@ -7,6 +7,10 @@ const on=(el,event,fn,opts)=>{if(el)el.addEventListener(event,fn,opts)};
 
 let units="mph";
 let motionToken=0;
+const settings={throttleStep:10,gotoRadius:500,reverseSeconds:5,steerStep:10,lossAction:"stop",theme:"dark"};
+try{Object.assign(settings,JSON.parse(localStorage.getItem("trollSettings")||"{}"))}catch(_){}
+function saveSettings(){try{localStorage.setItem("trollSettings",JSON.stringify(settings))}catch(_){}}
+
 const state={
   speed:0, dir:0, currentHeading:287, desiredHeading:287, steer:0,
   anchor:false, hold:false, cruise:false, transition:false
@@ -92,8 +96,8 @@ function setSteer(v){
   render();
 }
 
-on(by("left"),"click",()=>setSteer(state.steer-10));
-on(by("right"),"click",()=>setSteer(state.steer+10));
+on(by("left"),"click",()=>setSteer(state.steer-settings.steerStep));
+on(by("right"),"click",()=>setSteer(state.steer+settings.steerStep));
 on(by("center"),"click",()=>setSteer(0));
 
 function dial(e){
@@ -110,7 +114,7 @@ function forward(){
   motionToken++;
   state.transition=false;
   if(state.dir<0){state.speed=0;state.dir=1}
-  else{state.dir=1;state.speed=Math.min(100,state.speed+10)}
+  else{state.dir=1;state.speed=Math.min(100,state.speed+settings.throttleStep)}
   render();
 }
 
@@ -120,10 +124,11 @@ async function reverse(){
   if(state.dir>0&&state.speed>0){
     state.transition=true;
     const start=state.speed;
-    for(let i=1;i<=50;i++){
+    const steps=Math.max(10,Math.round(settings.reverseSeconds*10));
+    for(let i=1;i<=steps;i++){
       await new Promise(r=>setTimeout(r,100));
       if(token!==motionToken){state.transition=false;render();return}
-      state.speed=start*(1-i/50);
+      state.speed=start*(1-i/steps);
       render();
     }
     if(token!==motionToken)return;
@@ -137,7 +142,7 @@ async function reverse(){
     render();
   }else{
     state.dir=-1;
-    state.speed=Math.min(100,(state.speed||0)+10);
+    state.speed=Math.min(100,(state.speed||0)+settings.throttleStep);
     render();
   }
 }
@@ -156,29 +161,48 @@ on(by("speed"),"input",e=>{
 on(by("anchor"),"click",()=>{state.anchor=!state.anchor;if(state.anchor)state.cruise=false;render()});
 on(by("hold"),"click",()=>{state.hold=!state.hold;render()});
 on(by("cruise"),"click",()=>{state.cruise=!state.cruise;if(state.cruise)state.anchor=false;render()});
-on(by("stop"),"click",()=>{motionToken++;state.speed=0;state.dir=0;state.anchor=false;state.cruise=false;state.transition=false;render()});
+on(by("stop"),"click",()=>{motionToken++;state.speed=0;state.dir=0;state.anchor=false;state.cruise=false;state.transition=false;navigating=false;const route=by("routeSvg");if(route)route.classList.remove("on");const go=by("goTo");if(go){go.textContent="GO TO";go.classList.remove("navigating")}render()});
 
 const wpData={
   "Rock Pile":{coords:"30.12345, -83.45678",distance:286,bearing:"042°"},
   "Creek Mouth":{coords:"30.12402, -83.45531",distance:418,bearing:"071°"},
   "Trout Hole":{coords:"30.12271, -83.45744",distance:612,bearing:"198°"}
 };
+let selectedWaypointEl=null;
+let navigating=false;
+
+function drawRoute(){
+  const svg=by("routeSvg"),line=by("routePath"),boat=q(".mapBoat"),map=q(".mapMock");
+  if(!svg||!line||!boat||!map||!selectedWaypointEl||!navigating){if(svg)svg.classList.remove("on");return}
+  const mr=map.getBoundingClientRect(),br=boat.getBoundingClientRect(),wr=selectedWaypointEl.getBoundingClientRect();
+  const x1=br.left+br.width/2-mr.left, y1=br.top+br.height/2-mr.top;
+  const x2=wr.left+wr.width/2-mr.left, y2=wr.top+wr.height/2-mr.top;
+  line.setAttribute("x1",x1);line.setAttribute("y1",y1);line.setAttribute("x2",x2);line.setAttribute("y2",y2);
+  svg.classList.add("on");
+}
+
 qa(".wp").forEach(b=>on(b,"click",()=>{
+  selectedWaypointEl=b;
   const w=wpData[b.dataset.wp]; if(!w)return;
   safeText("wpName",b.dataset.wp);
   safeText("wpCoords",w.coords);
   safeText("wpDistance",w.distance+" ft");
   safeText("wpBearing",w.bearing);
-  const go=by("goTo"); if(go){go.disabled=w.distance>500;go.textContent="GO TO";go.classList.remove("navigating")}
-  safeText("goNote",w.distance>500?"Move within 500 ft to enable GO TO":"Available within 500 ft");
+  const go=by("goTo");
+  if(go){go.disabled=w.distance>settings.gotoRadius;go.textContent=navigating?"NAVIGATING…":"GO TO";go.classList.toggle("navigating",navigating)}
+  safeText("goNote",w.distance>settings.gotoRadius?"Move within "+settings.gotoRadius+" ft to enable GO TO":"Available within "+settings.gotoRadius+" ft");
   const card=by("waypointCard"); if(card)card.classList.remove("hidden");
+  if(navigating)requestAnimationFrame(drawRoute);
 }));
 on(by("closeWp"),"click",()=>{const c=by("waypointCard");if(c)c.classList.add("hidden")});
 on(by("goTo"),"click",()=>{
+  if(!selectedWaypointEl)return;
+  navigating=true;
   const go=by("goTo"); if(go){go.textContent="NAVIGATING…";go.classList.add("navigating")}
-  const route=q(".routeLine"); if(route)route.classList.add("on");
   safeText("goNote","Navigating to waypoint • use STOP to cancel");
+  requestAnimationFrame(drawRoute);
 });
+on(window,"resize",()=>requestAnimationFrame(drawRoute));
 
 on(by("batteryCard"),"click",()=>page("batteryPage"));
 qa(".back").forEach(b=>on(b,"click",()=>page("controlPage")));
@@ -195,17 +219,30 @@ on(by("closeMenu"),"click",()=>menu(false));
 on(by("drawerShade"),"click",()=>menu(false));
 qa("[data-open]").forEach(b=>on(b,"click",()=>{menu(false);page(b.dataset.open)}));
 
+function syncSettingsUI(){
+  units=settings.units==="knots"?"knots":"mph";
+  document.body.dataset.theme=settings.theme||"dark";
+  qa(".theme").forEach(x=>x.classList.toggle("active",x.dataset.theme===settings.theme));
+  qa(".unit").forEach(x=>x.classList.toggle("active",x.dataset.unit===units));
+  const ts=by("throttleStep"),gr=by("gotoRadius"),rs=by("reverseSeconds"),ss=by("steerStep"),la=by("lossAction");
+  if(ts)ts.value=String(settings.throttleStep);
+  if(gr)gr.value=String(settings.gotoRadius);
+  if(rs)rs.value=String(settings.reverseSeconds);
+  if(ss)ss.value=String(settings.steerStep);
+  if(la)la.value=settings.lossAction;
+}
 qa(".theme").forEach(b=>on(b,"click",()=>{
-  qa(".theme").forEach(x=>x.classList.remove("active"));
-  b.classList.add("active");
-  document.body.dataset.theme=b.dataset.theme||"dark";
+  settings.theme=b.dataset.theme||"dark";saveSettings();syncSettingsUI();
 }));
 qa(".unit").forEach(b=>on(b,"click",()=>{
-  qa(".unit").forEach(x=>x.classList.remove("active"));
-  b.classList.add("active");
-  units=b.dataset.unit==="knots"?"knots":"mph";
-  render();
+  settings.units=b.dataset.unit==="knots"?"knots":"mph";saveSettings();syncSettingsUI();render();
 }));
+on(by("throttleStep"),"change",e=>{settings.throttleStep=Math.max(5,Math.min(20,Number(e.target.value)||10));saveSettings()});
+on(by("gotoRadius"),"change",e=>{settings.gotoRadius=Math.max(100,Math.min(2000,Number(e.target.value)||500));e.target.value=settings.gotoRadius;saveSettings()});
+on(by("reverseSeconds"),"change",e=>{settings.reverseSeconds=Math.max(1,Math.min(10,Number(e.target.value)||5));e.target.value=settings.reverseSeconds;saveSettings()});
+on(by("steerStep"),"change",e=>{settings.steerStep=Math.max(5,Math.min(20,Number(e.target.value)||10));saveSettings()});
+on(by("lossAction"),"change",e=>{settings.lossAction=e.target.value==="neutral"?"neutral":"stop";saveSettings()});
+syncSettingsUI();
 
 window.addEventListener("error",e=>console.error("TROLL runtime error",e.error||e.message));
 window.addEventListener("unhandledrejection",e=>console.error("TROLL promise error",e.reason));
