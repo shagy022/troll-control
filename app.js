@@ -13,7 +13,7 @@ function saveSettings(){try{localStorage.setItem("trollSettings",JSON.stringify(
 
 const state={
   speed:0, dir:0, currentHeading:287, desiredHeading:287, steer:0,
-  anchor:false, hold:false, cruise:false, transition:false, signalLost:false
+  anchor:false, hold:false, cruise:false, transition:false, transitionTarget:0, signalLost:false
 };
 
 function safeText(id,value){const el=by(id);if(el)el.textContent=value}
@@ -64,7 +64,7 @@ function render(){
   safeClass("hold","on",state.hold);
   safeClass("cruise","on",state.cruise);
 
-  const gear=state.signalLost?"NO SIGNAL MANUAL ONLY":navigating?"EXIT AUTO PILOT":state.transition?"REVERSING…":state.dir>0?"FORWARD":state.dir<0?"REVERSE":"NEUTRAL";
+  const gear=state.signalLost?"NO SIGNAL MANUAL ONLY":navigating?"EXIT AUTO PILOT":state.transition?(state.transitionTarget>0?"SHIFTING TO FORWARD…":"SHIFTING TO REVERSE…"):state.dir>0?"FORWARD":state.dir<0?"REVERSE":"NEUTRAL";
   safeText("direction",gear);
   const dir=by("direction");
   if(dir){
@@ -166,50 +166,73 @@ on(helm,"pointermove",moveHelmSteer);
 on(helm,"pointerup",endHelmSteer);
 on(helm,"pointercancel",endHelmSteer);
 
-function forward(){
-  if(state.signalLost)return;
-  motionToken++;
-  state.transition=false;
-  if(state.dir<0){state.speed=0;state.dir=1}
-  else{state.dir=1;state.speed=Math.min(100,state.speed+settings.throttleStep)}
-  render();
-}
-
-async function reverse(){
+async function changeDirection(targetDir){
   if(state.signalLost||state.transition)return;
+
+  // Same direction: each tap simply adds the configured throttle step.
+  if(state.dir===targetDir){
+    state.speed=Math.min(100,state.speed+settings.throttleStep);
+    render();
+    return;
+  }
+
   const token=++motionToken;
-  if(state.dir>0&&state.speed>0){
-    state.transition=true;
-    const start=state.speed;
+  state.transition=true;
+  state.transitionTarget=targetDir;
+  const start=state.speed;
+
+  // Any powered direction change ramps smoothly to zero first.
+  if(start>0){
     const steps=Math.max(10,Math.round(settings.reverseSeconds*10));
     for(let i=1;i<=steps;i++){
       await new Promise(r=>setTimeout(r,100));
-      if(token!==motionToken){state.transition=false;render();return}
+      if(token!==motionToken){
+        state.transition=false;state.transitionTarget=0;
+        state.transitionTarget=0;
+        render();
+        return;
+      }
       state.speed=start*(1-i/steps);
       render();
     }
-    if(token!==motionToken)return;
-    state.speed=0;
-    setSteer(180);
-    await new Promise(r=>setTimeout(r,500));
-    if(token!==motionToken){state.transition=false;render();return}
-    state.dir=-1;
-    state.speed=10;
-    state.transition=false;
-    render();
-  }else{
-    state.dir=-1;
-    state.speed=Math.min(100,(state.speed||0)+settings.throttleStep);
-    render();
   }
+
+  if(token!==motionToken)return;
+  state.speed=0;
+
+  // Mechanical reverse: flip the steering assembly 180 degrees before applying thrust.
+  // Neutral -> Forward keeps the current steering direction.
+  const needsFlip=(state.dir!==0&&state.dir!==targetDir)||(state.dir===0&&targetDir<0);
+  if(needsFlip){
+    state.steer=normalize180(state.steer+180);
+    state.desiredHeading=normalize360(state.currentHeading+state.steer);
+    render();
+    await new Promise(r=>setTimeout(r,500));
+  }
+
+  if(token!==motionToken){
+    state.transition=false;state.transitionTarget=0;
+    state.transitionTarget=0;
+    render();
+    return;
+  }
+
+  state.dir=targetDir;
+  state.speed=settings.throttleStep;
+  state.transition=false;state.transitionTarget=0;
+  state.transitionTarget=0;
+  render();
 }
+
+function forward(){changeDirection(1)}
+function reverse(){changeDirection(-1)}
 
 on(by("forward"),"click",forward);
 on(by("reverse"),"click",reverse);
 on(by("speed"),"input",e=>{
   if(state.signalLost)return;
   motionToken++;
-  state.transition=false;
+  state.transition=false;state.transitionTarget=0;
   state.speed=Math.max(0,Math.min(100,Number(e.target.value)||0));
   if(state.speed===0)state.dir=0;
   else if(state.dir===0)state.dir=1;
@@ -219,7 +242,7 @@ on(by("speed"),"input",e=>{
 on(by("anchor"),"click",()=>{if(state.signalLost||navigating)return;state.anchor=!state.anchor;if(state.anchor)state.cruise=false;render()});
 on(by("hold"),"click",()=>{if(state.signalLost||navigating)return;state.hold=!state.hold;render()});
 on(by("cruise"),"click",()=>{if(state.signalLost)return;state.cruise=!state.cruise;if(state.cruise)state.anchor=false;render()});
-on(by("stop"),"click",()=>{motionToken++;state.speed=0;state.dir=0;state.anchor=false;state.cruise=false;state.transition=false;if(navigating){navigating=false;activeWaypointName="";const route=by("routeSvg");if(route)route.classList.remove("on");const go=by("goTo");if(go){go.textContent="GO TO";go.classList.remove("navigating")}}render()});
+on(by("stop"),"click",()=>{motionToken++;state.speed=0;state.dir=0;state.anchor=false;state.cruise=false;state.transition=false;state.transitionTarget=0;if(navigating){navigating=false;activeWaypointName="";const route=by("routeSvg");if(route)route.classList.remove("on");const go=by("goTo");if(go){go.textContent="GO TO";go.classList.remove("navigating")}}render()});
 
 const wpData={
   "Rock Pile":{coords:"30.12345, -83.45678",distance:286,bearing:"042°"},
@@ -295,7 +318,7 @@ async function loseSignal(){
   if(state.signalLost)return;
   const token=++motionToken;
   state.signalLost=true;
-  state.transition=false;
+  state.transition=false;state.transitionTarget=0;
   state.anchor=false;
   state.hold=false;
   state.cruise=false;
@@ -322,7 +345,7 @@ async function loseSignal(){
 function restoreSignal(){
   motionToken++;
   state.signalLost=false;
-  state.transition=false;
+  state.transition=false;state.transitionTarget=0;
   render();
 }
 on(by("simulateSignal"),"click",()=>state.signalLost?restoreSignal():loseSignal());
@@ -368,7 +391,7 @@ async function runCalibrationSweep(){
   calibrationRunning=true;
   const token=++calibrationToken;
   motionToken++;
-  state.speed=0;state.dir=0;state.anchor=false;state.hold=false;state.cruise=false;state.transition=false;
+  state.speed=0;state.dir=0;state.anchor=false;state.hold=false;state.cruise=false;state.transition=false;state.transitionTarget=0;
   if(navigating)cancelAutopilot();
   render();
   showCalStep("calStepSweep");
