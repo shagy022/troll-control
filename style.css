@@ -21,3 +21,12 @@
 .inlineSetting input{flex:1}
 .inlineSetting span{margin:0!important;min-width:64px;font-size:14px!important;color:var(--cyan)!important;font-weight:800}
 .settingsList article>label{display:block}
+
+/* v0.12 autopilot state */
+.direction{display:block;width:100%;border:0;background:transparent;min-height:34px;padding:3px 6px;cursor:default}
+.direction.autopilotExit{color:#ffd33d!important;font-size:19px!important;font-weight:1000!important;cursor:pointer;animation:cautionBlink 1.05s steps(1,end) infinite;text-shadow:0 0 10px #ffd33d}
+@keyframes cautionBlink{0%,54%{opacity:1}55%,100%{opacity:.28}}
+.turn:disabled,#center:disabled{opacity:.28!important;filter:grayscale(.55);cursor:not-allowed}
+.helm.autopilotSteering .steerKnob{opacity:.28;box-shadow:none!important;pointer-events:none!important}
+.helm.autopilotSteering .headingMarker{color:#ffd33d;text-shadow:0 0 9px #ffd33d}
+@media (prefers-reduced-motion:reduce){.direction.autopilotExit{animation:none}}
