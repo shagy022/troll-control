@@ -197,3 +197,6 @@ body[data-theme="highvis"] .ampDraw b{color:#63e28f}
 
 /* v0.17.3 helm/throttle separation */
 .helm{transform:translateX(2px)!important}
+
+/* v0.17.4 throttle position */
+.speed{transform:translateX(8px)!important}
