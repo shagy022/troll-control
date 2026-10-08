@@ -50,6 +50,7 @@ let savedWaypoints=[];
 let waypointEditId=null;
 let waypointDraftType="waypoint";
 let waypointDraftPhotos=[];
+let waypointDetailId=null;
 let waypointFilter="all";
 let mapFilter="all";
 let mapZoomIndex=2;
@@ -209,7 +210,7 @@ function renderWaypointList(){
   list.innerHTML=savedWaypoints.filter(w=>waypointMatchesFilter(w,waypointFilter)).slice().reverse().map(w=>{
     const t=waypointTypes[w.type]||waypointTypes.waypoint;
     const desc=(w.description||"").replace(/[<>&]/g,m=>({"<":"&lt;",">":"&gt;","&":"&amp;"}[m]));
-    return '<article class="waypointListCard '+w.type+'" data-list-id="'+w.id+'">'+
+    return '<article class="waypointListCard '+w.type+'" data-list-id="'+w.id+'" title="Tap to open waypoint">'+
       '<div class="wpListHead"><div><small>'+t.label.toUpperCase()+'</small><h3>'+t.icon+' '+w.name.replace(/[<>&]/g,m=>({"<":"&lt;",">":"&gt;","&":"&amp;"}[m]))+'</h3></div><span class="wpIcon">'+t.icon+'</span></div>'+
       '<small>'+waypointCoordsText(w.lat,w.lng)+' • '+new Date(w.createdAt).toLocaleString()+'</small>'+
       (desc?'<p>'+desc.slice(0,150)+(desc.length>150?'…':'')+'</p>':'')+
@@ -324,6 +325,62 @@ function commitWaypoint(){
     savedWaypoints.push({id:"wp"+Date.now(),type:waypointDraftType,name,lat:SIM_GPS.lat,lng:SIM_GPS.lng,description,species,lure,depth,waterTemp,tide,photos:waypointDraftPhotos.slice(0,5),createdAt:Date.now()});
   }
   saveWaypointStore();renderSavedWaypoints();closeWaypointEditor();
+}
+
+function escHtml(v){
+  return String(v??"").replace(/[<>&"]/g,m=>({"<":"&lt;",">":"&gt;","&":"&amp;",'"':"&quot;"}[m]));
+}
+function openPhotoLightbox(src){
+  if(!src)return;
+  const img=by("photoLightboxImage"),box=by("photoLightbox");
+  if(img)img.src=src;
+  if(box)box.classList.remove("hidden");
+}
+function closePhotoLightbox(){
+  const box=by("photoLightbox"),img=by("photoLightboxImage");
+  if(box)box.classList.add("hidden");
+  if(img)img.removeAttribute("src");
+}
+function openWaypointDetail(w){
+  if(!w)return;
+  waypointDetailId=w.id;
+  const t=waypointTypes[w.type]||waypointTypes.waypoint;
+  safeText("waypointDetailType",t.icon+" "+t.label.toUpperCase());
+  safeText("waypointDetailName",w.name);
+  safeText("waypointDetailCoords",waypointCoordsText(w.lat,w.lng)+" • "+new Date(w.createdAt).toLocaleString());
+  const meta=by("waypointDetailMeta");
+  if(meta){
+    meta.innerHTML=
+      (w.species?'<span>🐟 '+escHtml(w.species)+'</span>':'')+
+      (w.lure?'<span>BAIT '+escHtml(w.lure)+'</span>':'')+
+      (w.depth!==""&&w.depth!=null?'<span>DEPTH '+escHtml(w.depth)+' ft</span>':'')+
+      (w.waterTemp!==""&&w.waterTemp!=null?'<span>WATER '+escHtml(w.waterTemp)+'°F</span>':'')+
+      (w.tide?'<span>'+escHtml(w.tide)+'</span>':'');
+  }
+  safeText("waypointDetailDescription",w.description||"");
+  const photos=by("waypointDetailPhotos");
+  if(photos)photos.innerHTML=(w.photos||[]).map((src,i)=>'<img src="'+src+'" data-detail-photo="'+i+'" alt="Waypoint photo '+(i+1)+'">').join("");
+  const go=by("detailGoTo");if(go)go.disabled=savedWaypointDistance(w)>settings.gotoRadius||!autopilotAllowed();
+  const ov=by("waypointDetailOverlay");if(ov)ov.classList.remove("hidden");
+}
+function closeWaypointDetail(){
+  waypointDetailId=null;
+  const ov=by("waypointDetailOverlay");if(ov)ov.classList.add("hidden");
+}
+function setAutoNavigateThrottle(v){
+  v=Number(v);
+  if(![50,75,100].includes(v)||!navigating)return;
+  settings.gotoMaxThrottle=v;
+  saveSettings();
+  const gm=by("gotoMaxThrottle");if(gm)gm.value=String(v);
+  const slow=settings.gotoSlowdownDistance;
+  if(navRemaining>slow)state.speed=v;
+  else{
+    const span=Math.max(1,slow-3);
+    const progress=Math.max(0,Math.min(1,(navRemaining-3)/span));
+    state.speed=Math.max(8,8+(v-8)*progress);
+  }
+  render();
 }
 function renderPreflightRows(){
   const list=by("preflightList");if(!list)return;
@@ -479,6 +536,9 @@ function render(){
     connection.classList.toggle("noSignalStatus",state.signalLost);
   }
 
+  const autoThrottlePanel=by("autoThrottlePanel");
+  if(autoThrottlePanel)autoThrottlePanel.classList.toggle("hidden",!navigating);
+  qa("[data-auto-throttle]").forEach(b=>b.classList.toggle("active",Number(b.dataset.autoThrottle)===Number(settings.gotoMaxThrottle)));
   const steeringLocked=!motorCommandsAllowed()||navigating||state.zigTroll||state.anchor||state.signalLost||state.steeringFault;
   const leftBtn=by("left"),rightBtn=by("right");
   if(leftBtn)leftBtn.disabled=steeringLocked;
@@ -973,6 +1033,38 @@ on(by("resumeAuto"),"click",()=>{
   }
 });
 
+
+qa("[data-auto-throttle]").forEach(b=>on(b,"click",()=>setAutoNavigateThrottle(b.dataset.autoThrottle)));
+on(by("closeWaypointDetail"),"click",closeWaypointDetail);
+on(by("waypointDetailOverlay"),"click",e=>{if(e.target===by("waypointDetailOverlay"))closeWaypointDetail()});
+on(by("detailEdit"),"click",()=>{
+  const w=savedWaypoints.find(x=>x.id===waypointDetailId);if(!w)return;
+  closeWaypointDetail();openWaypointEditor(w.type,w.id);
+});
+on(by("detailDelete"),"click",()=>{
+  const w=savedWaypoints.find(x=>x.id===waypointDetailId);if(!w)return;
+  if(confirm('Delete "'+w.name+'"?')){
+    savedWaypoints=savedWaypoints.filter(x=>x.id!==w.id);
+    saveWaypointStore();renderSavedWaypoints();closeWaypointDetail();
+  }
+});
+on(by("detailGoTo"),"click",()=>{
+  const w=savedWaypoints.find(x=>x.id===waypointDetailId);if(!w)return;
+  renderSavedMapMarkers();
+  const marker=q('.savedMapMarker[data-saved-id="'+w.id+'"]');
+  openSavedWaypointCard(w,marker);
+  selectedWaypointEl=marker;
+  closeWaypointDetail();
+  engageAutopilot();
+});
+on(by("waypointDetailPhotos"),"click",e=>{
+  const img=e.target.closest("img");if(img)openPhotoLightbox(img.src);
+});
+on(by("photoLightbox"),"click",e=>{if(e.target===by("photoLightbox"))closePhotoLightbox()});
+on(by("closePhotoLightbox"),"click",closePhotoLightbox);
+on(by("waypointCard"),"click",e=>{
+  const img=e.target.closest(".waypointCardPhotos img");if(img){e.stopPropagation();openPhotoLightbox(img.src)}
+});
 on(by("waypointFilterBar"),"click",e=>{
   const b=e.target.closest("button[data-filter]");if(!b)return;
   waypointFilter=b.dataset.filter||"all";renderFilterBars();renderWaypointList();
@@ -989,23 +1081,29 @@ on(by("closeWaypointEditor"),"click",closeWaypointEditor);
 on(by("cancelWaypointSave"),"click",closeWaypointEditor);
 on(by("waypointDescInput"),"input",updateWaypointEditorCounts);
 on(by("waypointPhotosInput"),"change",e=>addWaypointPhotos(e.target.files||[]));
+on(by("waypointPhotoPreview"),"click",e=>{const img=e.target.closest("img");if(img)openPhotoLightbox(img.src)});
 on(by("saveWaypoint"),"click",commitWaypoint);
 on(by("waypointEditor"),"click",e=>{if(e.target===by("waypointEditor"))closeWaypointEditor()});
 on(by("waypointList"),"click",e=>{
-  const b=e.target.closest("button[data-action]");if(!b)return;
-  const w=savedWaypoints.find(x=>x.id===b.dataset.id);if(!w)return;
-  if(b.dataset.action==="edit"){openWaypointEditor(w.type,w.id);return}
-  if(b.dataset.action==="delete"){
-    if(confirm('Delete "'+w.name+'"?')){savedWaypoints=savedWaypoints.filter(x=>x.id!==w.id);saveWaypointStore();renderSavedWaypoints()}
-    return;
+  const b=e.target.closest("button[data-action]");
+  if(b){
+    const w=savedWaypoints.find(x=>x.id===b.dataset.id);if(!w)return;
+    if(b.dataset.action==="edit"){openWaypointEditor(w.type,w.id);return}
+    if(b.dataset.action==="delete"){
+      if(confirm('Delete "'+w.name+'"?')){savedWaypoints=savedWaypoints.filter(x=>x.id!==w.id);saveWaypointStore();renderSavedWaypoints()}
+      return;
+    }
+    if(b.dataset.action==="goto"){
+      renderSavedMapMarkers();
+      const marker=q('.savedMapMarker[data-saved-id="'+w.id+'"]');
+      openSavedWaypointCard(w,marker);
+      selectedWaypointEl=marker;
+      engageAutopilot();
+      return;
+    }
   }
-  if(b.dataset.action==="goto"){
-    renderSavedMapMarkers();
-    const marker=q('.savedMapMarker[data-saved-id="'+w.id+'"]');
-    openSavedWaypointCard(w,marker);
-    selectedWaypointEl=marker;
-    engageAutopilot();
-  }
+  const card=e.target.closest(".waypointListCard");if(!card)return;
+  const w=savedWaypoints.find(x=>x.id===card.dataset.listId);if(w)openWaypointDetail(w);
 });
 on(q(".mapMock"),"click",e=>{
   const marker=e.target.closest(".savedMapMarker");if(!marker)return;
