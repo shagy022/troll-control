@@ -40,7 +40,7 @@ if(helm&&thrust){
 }
 
 function positionOnSteerRing(el,angle,radius,rotate){
-  if(!el||!ring)return;
+  if(!el||!ring||ring.clientWidth<20||ring.clientHeight<20)return;
   const rad=angle*Math.PI/180;
   const cx=ring.clientWidth/2;
   const cy=ring.clientHeight/2;
@@ -89,8 +89,9 @@ function render(){
 
   ["forward","reverse","speed","cruise","anchor","hold"].forEach(id=>{
     const el=by(id); if(!el)return;
-    el.disabled=state.signalLost;
-    el.classList.toggle("motorLocked",state.signalLost);
+    const autoModeLocked=navigating&&(id==="anchor"||id==="hold");
+    el.disabled=state.signalLost||autoModeLocked;
+    el.classList.toggle("motorLocked",state.signalLost||autoModeLocked);
   });
   const goBtn=by("goTo");
   if(goBtn&&state.signalLost){goBtn.disabled=true;goBtn.classList.add("motorLocked")}
@@ -122,6 +123,7 @@ function page(id){
   target.classList.remove("hidden");
   qa("nav button[data-page]").forEach(x=>x.classList.toggle("active",x.dataset.page===id));
   try{window.scrollTo({top:0,behavior:"instant"})}catch(_){window.scrollTo(0,0)}
+  if(id==="controlPage")requestAnimationFrame(render);
 }
 
 function setSteer(v){
@@ -194,8 +196,8 @@ on(by("speed"),"input",e=>{
   render();
 });
 
-on(by("anchor"),"click",()=>{if(state.signalLost)return;state.anchor=!state.anchor;if(state.anchor)state.cruise=false;render()});
-on(by("hold"),"click",()=>{if(state.signalLost)return;state.hold=!state.hold;render()});
+on(by("anchor"),"click",()=>{if(state.signalLost||navigating)return;state.anchor=!state.anchor;if(state.anchor)state.cruise=false;render()});
+on(by("hold"),"click",()=>{if(state.signalLost||navigating)return;state.hold=!state.hold;render()});
 on(by("cruise"),"click",()=>{if(state.signalLost)return;state.cruise=!state.cruise;if(state.cruise)state.anchor=false;render()});
 on(by("stop"),"click",()=>{motionToken++;state.speed=0;state.dir=0;state.anchor=false;state.cruise=false;state.transition=false;if(navigating){navigating=false;activeWaypointName="";const route=by("routeSvg");if(route)route.classList.remove("on");const go=by("goTo");if(go){go.textContent="GO TO";go.classList.remove("navigating")}}render()});
 
@@ -383,7 +385,8 @@ function saveCalibration(){
   syncSettingsUI();
   state.steer=0;
   state.desiredHeading=state.currentHeading;
-  render();
+  if(knob){knob.style.left="50%";knob.style.top="-8px";knob.style.transform="translateX(-50%)"}
+  if(headingMarker){headingMarker.style.left="50%";headingMarker.style.top="10px";headingMarker.style.transform="translateX(-50%)"}
   closeCalibration();
 }
 
