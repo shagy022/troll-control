@@ -564,7 +564,7 @@ function render(){
     const zigLocked=state.zigTroll&&(id==="forward"||id==="reverse"||id==="cruise"||id==="anchor"||id==="hold");
     const spotLocked=state.anchor&&(id==="forward"||id==="reverse"||id==="speed"||id==="cruise"||id==="hold"||id==="zig");
     const preflightLocked=!motorCommandsAllowed()||(preflightMode==="manualOnly"&&(id==="cruise"||id==="anchor"||id==="hold"||id==="zig"));
-    const cruiseLocked=state.cruise&&(id==="speed");
+    const cruiseLocked=state.cruise&&(id==="speed"||id==="forward"||id==="reverse");
     const locked=state.signalLost||state.steeringFault||preflightLocked||waypointLocked||zigLocked||spotLocked||cruiseLocked;
     el.disabled=locked;
     el.classList.toggle("motorLocked",locked);
@@ -663,7 +663,7 @@ on(helm,"pointerup",endHelmSteer);
 on(helm,"pointercancel",endHelmSteer);
 
 async function changeDirection(targetDir){
-  if(!motorCommandsAllowed()||state.signalLost||state.transition)return;
+  if(!motorCommandsAllowed()||state.signalLost||state.transition||state.cruise)return;
 
   // Same direction: each tap simply adds the configured throttle step.
   if(state.dir===targetDir){
