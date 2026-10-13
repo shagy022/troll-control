@@ -71,7 +71,7 @@ function saveWaypointStore(){try{localStorage.setItem("trollWaypoints",JSON.stri
 
 const state={
   speed:0, dir:0, currentHeading:287, desiredHeading:287, courseOverGround:287, steer:0, actualSteer:0, steeringFault:false,
-  anchor:false, hold:false, cruise:false, zigTroll:false, spotAccuracy:"medium", transition:false, transitionTarget:0, signalLost:false
+  anchor:false, hold:false, cruise:false, cruiseMph:0, zigTroll:false, spotAccuracy:"medium", transition:false, transitionTarget:0, signalLost:false
 };
 
 function safeText(id,value){const el=by(id);if(el)el.textContent=value}
@@ -481,7 +481,7 @@ function triggerSteeringFault(){
   clearNavTimer();
   if(zigTimer){clearInterval(zigTimer);zigTimer=null}
   if(spotTimer){clearInterval(spotTimer);spotTimer=null}
-  state.zigTroll=false;state.anchor=false;state.hold=false;state.cruise=false;
+  state.zigTroll=false;state.anchor=false;state.hold=false;state.cruise=false;state.cruiseMph=0;
   state.speed=0;state.dir=0;
   navigating=false;
   activeWaypointName="";
@@ -515,9 +515,12 @@ function render(){
   qa(".accuracyBtns button").forEach(b=>b.classList.toggle("active",b.dataset.accuracy===state.spotAccuracy));
   safeClass("hold","on",state.hold);
   safeClass("cruise","on",state.cruise);
+  safeClass("cruise","cruiseActive",state.cruise);
+  const cruiseBtn=by("cruise");
+  if(cruiseBtn)cruiseBtn.innerHTML=state.cruise?'◴<span>CANCEL CRUISE CONTROL</span>':'◴<span>CRUISE CONTROL</span>';
   safeClass("zig","on",state.zigTroll);
 
-  const gear=state.steeringFault?"STEERING POSITION FAULT":state.signalLost?"NO SIGNAL MANUAL ONLY":state.zigTroll?"SCOUT TROLL AUTOPILOT":state.transition?(state.transitionTarget>0?"SHIFTING TO FORWARD…":"SHIFTING TO REVERSE…"):state.dir>0?"FORWARD":state.dir<0?"REVERSE":"NEUTRAL";
+  const gear=state.steeringFault?"STEERING POSITION FAULT":state.signalLost?"NO SIGNAL MANUAL ONLY":state.zigTroll?"SCOUT TROLL AUTOPILOT":state.cruise?("CRUISE CONTROL ACTIVE: "+state.cruiseMph.toFixed(1)+" MPH"):state.transition?(state.transitionTarget>0?"SHIFTING TO FORWARD…":"SHIFTING TO REVERSE…"):state.dir>0?"FORWARD":state.dir<0?"REVERSE":"NEUTRAL";
   const dir=by("direction");
   if(dir){
     dir.className="direction";
@@ -527,7 +530,7 @@ function render(){
     }else{
       dir.textContent=gear;
       if(state.signalLost)dir.classList.add("noSignal");
-      else if(state.zigTroll)dir.classList.add("autopilotExit");
+      else if(state.zigTroll||state.cruise)dir.classList.add("autopilotExit");
       else if(state.dir>0)dir.classList.add("forwardDir");
       else if(state.dir<0)dir.classList.add("reverseDir");
     }
@@ -561,7 +564,8 @@ function render(){
     const zigLocked=state.zigTroll&&(id==="forward"||id==="reverse"||id==="cruise"||id==="anchor"||id==="hold");
     const spotLocked=state.anchor&&(id==="forward"||id==="reverse"||id==="speed"||id==="cruise"||id==="hold"||id==="zig");
     const preflightLocked=!motorCommandsAllowed()||(preflightMode==="manualOnly"&&(id==="cruise"||id==="anchor"||id==="hold"||id==="zig"));
-    const locked=state.signalLost||state.steeringFault||preflightLocked||waypointLocked||zigLocked||spotLocked;
+    const cruiseLocked=state.cruise&&(id==="speed");
+    const locked=state.signalLost||state.steeringFault||preflightLocked||waypointLocked||zigLocked||spotLocked||cruiseLocked;
     el.disabled=locked;
     el.classList.toggle("motorLocked",locked);
   });
@@ -720,7 +724,7 @@ function reverse(){changeDirection(-1)}
 on(by("forward"),"click",forward);
 on(by("reverse"),"click",reverse);
 on(by("speed"),"input",e=>{
-  if(!motorCommandsAllowed()||state.signalLost||state.anchor)return;
+  if(!motorCommandsAllowed()||state.signalLost||state.anchor||state.cruise)return;
   motionToken++;
   state.transition=false;state.transitionTarget=0;
   state.speed=Math.max(0,Math.min(100,Number(e.target.value)||0));
@@ -757,7 +761,7 @@ function startZigTroll(){
   if(spotTimer){clearInterval(spotTimer);spotTimer=null}
   state.anchor=false;
   state.hold=false;
-  state.cruise=false;
+  state.cruise=false;state.cruiseMph=0;
   state.zigTroll=true;
   state.transition=false;
   state.transitionTarget=0;
@@ -844,7 +848,7 @@ function startSpotLock(){
   autoSteerToken++;
   state.anchor=true;
   state.hold=false;
-  state.cruise=false;
+  state.cruise=false;state.cruiseMph=0;
   state.speed=0;
   state.dir=0;
   startSpotSimulation();
@@ -860,7 +864,19 @@ function stopSpotLock(){
 }
 on(by("anchor"),"click",()=>state.anchor?stopSpotLock():startSpotLock());
 on(by("hold"),"click",()=>{if(!autopilotAllowed()||state.signalLost||navigating||state.zigTroll)return;state.hold=!state.hold;render()});
-on(by("cruise"),"click",()=>{if(!autopilotAllowed()||state.signalLost||state.zigTroll)return;state.cruise=!state.cruise;if(state.cruise)state.anchor=false;render()});
+on(by("cruise"),"click",()=>{
+  if(!autopilotAllowed()||state.signalLost||state.zigTroll)return;
+  if(state.cruise){
+    state.cruise=false;state.cruiseMph=0;
+    render();
+    return;
+  }
+  if(state.speed<=0||state.dir===0)return;
+  state.anchor=false;
+  state.cruiseMph=state.speed*0.048;
+  state.cruise=true;
+  render();
+});
 qa(".accuracyBtns button").forEach(b=>on(b,"click",()=>{state.spotAccuracy=b.dataset.accuracy||"medium";render();}));
 on(by("exitSpotLock"),"click",stopSpotLock);
 on(by("zig"),"click",()=>state.zigTroll?cancelZigTroll():startZigTroll());
@@ -872,7 +888,7 @@ on(by("stop"),"click",()=>{
   autoSteerToken++;motionToken++;
   if(zigTimer){clearInterval(zigTimer);zigTimer=null}
   state.zigTroll=false;zigFeet=0;zigLeg="diag";
-  state.speed=0;state.dir=0;state.anchor=false;state.hold=false;state.cruise=false;
+  state.speed=0;state.dir=0;state.anchor=false;state.hold=false;state.cruise=false;state.cruiseMph=0;
   state.transition=false;state.transitionTarget=0;
   if(navigating){
     navigating=false;activeWaypointName="";
@@ -914,7 +930,7 @@ function completeGoTo(){
   // Handoff the reached waypoint position to Spot Lock.
   state.anchor=true;
   state.hold=false;
-  state.cruise=false;
+  state.cruise=false;state.cruiseMph=0;
   state.zigTroll=false;
   spotDx=0;spotDy=0;
   startSpotSimulation();
@@ -948,7 +964,7 @@ function engageAutopilot(remainingOverride=null){
   activeWaypointName=name;
   page("controlPage");
   state.hold=false;
-  state.cruise=false;
+  state.cruise=false;state.cruiseMph=0;
   // In the simulator, point the commanded motor direction toward the waypoint bearing.
   const targetBearing=parseFloat(w.bearing);
   if(Number.isFinite(targetBearing)){
@@ -1024,7 +1040,7 @@ on(by("resumeAuto"),"click",()=>{
     page("controlPage");
     engageAutopilot(snap.remaining);
   }else if(snap.kind==="scout"){
-    state.anchor=false;state.hold=false;state.cruise=false;state.zigTroll=true;
+    state.anchor=false;state.hold=false;state.cruise=false;state.cruiseMph=0;state.zigTroll=true;
     state.transition=false;state.transitionTarget=0;state.dir=1;
     state.speed=Math.max(10,Math.min(100,Number(snap.speed)||50));
     zigBaseHeading=Number(snap.baseHeading)||normalize360(state.currentHeading);
@@ -1136,7 +1152,7 @@ async function loseSignal(){
   state.transition=false;state.transitionTarget=0;
   state.anchor=false;
   state.hold=false;
-  state.cruise=false;
+  state.cruise=false;state.cruiseMph=0;
   if(zigTimer){clearInterval(zigTimer);zigTimer=null}
   state.zigTroll=false;zigFeet=0;zigLeg="diag";
   if(navigating){
@@ -1208,7 +1224,7 @@ async function runCalibrationSweep(){
   calibrationRunning=true;
   const token=++calibrationToken;
   motionToken++;
-  state.speed=0;state.dir=0;state.anchor=false;state.hold=false;state.cruise=false;state.transition=false;state.transitionTarget=0;
+  state.speed=0;state.dir=0;state.anchor=false;state.hold=false;state.cruise=false;state.cruiseMph=0;state.transition=false;state.transitionTarget=0;
   if(navigating)cancelAutopilot();
   render();
   showCalStep("calStepSweep");
