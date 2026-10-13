@@ -454,3 +454,16 @@ body[data-theme="classic"] .settingInfoBtn{background:#f3f5f6;color:#006fa3}
 .photoLightbox{position:fixed;inset:0;z-index:500;background:#000d;display:grid;place-items:center;padding:12px}
 .photoLightbox img{width:auto;height:auto;max-width:75vw;max-height:75vh;object-fit:contain;border-radius:12px;border:1px solid #ffffff33;box-shadow:0 20px 80px #000}
 .photoLightboxClose{position:fixed;top:max(18px,env(safe-area-inset-top));right:18px;width:46px;height:46px;border-radius:50%;border:1px solid #ffffff55;background:#091014dd;color:white;font-size:29px;z-index:501}
+
+
+/* v0.30 cruise control */
+.modes button.cruiseActive{
+  border-color:#ffd33d!important;
+  color:#ffd33d!important;
+  box-shadow:0 0 18px #ffd33d44!important;
+}
+.speed input:disabled{
+  opacity:.32;
+  filter:grayscale(.45);
+  cursor:not-allowed;
+}
